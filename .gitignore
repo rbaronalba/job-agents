@@ -1,0 +1,26 @@
+# Lista blanca: se ignora TODO y solo se permite lo que es codigo o plantilla sin datos personales.
+# Nunca añadir aqui cv/, data/, output/, logs/, .env, tokens ni config/profile.yaml.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/requirements.txt
+!/.env.example
+
+!/.claude/
+/.claude/*
+!/.claude/agents/
+!/.claude/commands/
+!/.claude/settings.json
+
+!/src/
+!/githooks/
+
+!/config/
+/config/*
+!/config/profile.example.yaml
+
+!/plantillas/
+
+__pycache__/
+*.pyc

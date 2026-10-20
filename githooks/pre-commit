@@ -1,0 +1,13 @@
+#!/bin/sh
+# Segunda barrera tras el .gitignore: bloquea commits con datos personales o secretos.
+fail=0
+for f in $(git diff --cached --name-only --diff-filter=ACM); do
+  case "$f" in
+    *.pdf|*.docx|*.xlsx|*.sqlite|*.csv|*.env|*token*.json|*credentials*.json|*client_secret*)
+      echo "BLOQUEADO (tipo de archivo sensible): $f"; fail=1; continue;;
+  esac
+  if git show ":$f" | grep -nEi '665 ?90 ?39 ?88|client_secret"?\s*[:=]\s*"?[A-Za-z0-9_-]{8}|gho_[A-Za-z0-9]{20}|ya29\.|1//0[A-Za-z0-9_-]{20}|-----BEGIN [A-Z ]*PRIVATE KEY' >/dev/null; then
+    echo "BLOQUEADO (posible secreto o telefono): $f"; fail=1
+  fi
+done
+[ $fail -eq 0 ] || { echo "Commit cancelado. Revisa los archivos de arriba."; exit 1; }
