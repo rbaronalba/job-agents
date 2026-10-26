@@ -2,8 +2,9 @@
 
 Asunto: Empleo
 
+Solo se adapta este texto; el CV adjunto es siempre el modelo fijo (cv/es para empresas españolas, cv/en para el resto).
 Se adapta a cada empresa conservando estructura, tono y longitud (unas 200 palabras). Entre corchetes, lo que cambia.
-Sin guiones largos ni medios. Tuteo en plural ("os escribo"). En inglés solo si la empresa trabaja en inglés.
+Sin guiones largos ni medios. Tuteo en plural ("os escribo"). Empresas de fuera de España: en inglés, asunto "Job application | El Candidato".
 
 ---
 
