@@ -4,6 +4,7 @@
   guardar     Guarda o fusiona ofertas (JSON) en el histórico
   listar      Lista ofertas por estado
   estado      Cambia el estado de una oferta
+  cv          Genera el CV adaptado de una oferta y lo verifica
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
 """
@@ -118,6 +119,37 @@ def cmd_estado(args):
     print(f"{args.id} -> {args.estado}")
 
 
+def cmd_cv(args):
+    from . import cv
+    if args.id == "base":
+        for idioma in ("es", "en"):
+            inf = cv.generar({"idioma": idioma}, RAIZ / "output" / "base" / idioma)
+            print(f"output/base/{idioma}/{cv.NOMBRE_PDF}: {inf['paginas']} página(s)")
+        return
+    con = db.conectar()
+    oferta = con.execute("SELECT semana FROM ofertas WHERE id = ?", (args.id,)).fetchone()
+    if not oferta:
+        raise SystemExit(f"No existe la oferta {args.id}")
+    adapt = json.loads(Path(args.adaptacion).read_text(encoding="utf-8"))
+    carpeta = RAIZ / "output" / oferta["semana"] / args.id
+    inf = cv.generar(adapt, carpeta)
+    (carpeta / "adaptacion.json").write_text(json.dumps(adapt, ensure_ascii=False, indent=1), encoding="utf-8")
+    problemas = []
+    if inf["paginas"] > 1:
+        problemas.append(f"{inf['paginas']} páginas (recorta viñetas o proyectos)")
+    if inf["guiones_prohibidos"]:
+        problemas.append("contiene guiones largos o medios")
+    print(json.dumps({k: v for k, v in inf.items() if k != "texto"}, ensure_ascii=False))
+    if problemas:
+        raise SystemExit("CV NO válido: " + "; ".join(problemas))
+    con.execute("UPDATE ofertas SET coincidencia_kw = ?, carencias = COALESCE(?, carencias) WHERE id = ?",
+                (f"{inf['coincidencia']}%" if inf["coincidencia"] is not None else None,
+                 ", ".join(adapt["carencias"]) if adapt.get("carencias") else None, args.id))
+    db.cambiar_estado(con, args.id, "cv_adaptado")
+    con.commit()
+    print(f"{args.id} -> cv_adaptado ({carpeta.relative_to(RAIZ)})")
+
+
 def cmd_excel(args):
     from . import excel
     con = db.conectar()
@@ -169,6 +201,11 @@ def main(argv=None):
     s = sub.add_parser("estado")
     s.add_argument("id"); s.add_argument("estado", choices=db.ESTADOS); s.add_argument("--nota")
     s.set_defaults(fn=cmd_estado)
+
+    s = sub.add_parser("cv", help="Genera CV_Candidato.pdf para una oferta (o 'base')")
+    s.add_argument("id", help="ID de oferta o 'base'")
+    s.add_argument("adaptacion", nargs="?", help="JSON de adaptación (obligatorio salvo con 'base')")
+    s.set_defaults(fn=cmd_cv)
 
     s = sub.add_parser("excel", help="Importa cambios manuales y regenera el Excel semanal")
     s.add_argument("--semana", help="AAAA-Www (por defecto la actual)")
