@@ -224,7 +224,7 @@ def cmd_resumen(args):
     lineas = [
         f"# Resumen {datetime.now():%Y-%m-%d %H:%M}",
         f"- Ofertas nuevas hoy: {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado != ?', hoy, 'descartada')}",
-        f"- Descartadas hoy (idioma o presencial fuera): {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado = ?', hoy, 'descartada')}",
+        f"- Descartadas hoy (idioma, fraude o cerradas): {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado = ?', hoy, 'descartada')}",
         f"- CVs adaptados pendientes de enviar: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'cv_adaptado')}",
         f"- Pendientes de tu revisión: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'pendiente_revision')}",
         f"- Candidaturas enviadas hoy: {q('SELECT COUNT(*) FROM ofertas WHERE enviada = ?', hoy)}",
