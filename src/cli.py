@@ -124,9 +124,10 @@ def cmd_estado(args):
 def cmd_cv(args):
     from . import cv
     if args.id == "base":
+        # Modelos fijos que se adjuntan en las candidaturas espontáneas
         for idioma in ("es", "en"):
-            inf = cv.generar({"idioma": idioma}, RAIZ / "output" / "base" / idioma)
-            print(f"output/base/{idioma}/{cv.NOMBRE_PDF}: {inf['paginas']} página(s)")
+            inf = cv.generar({"idioma": idioma}, RAIZ / "cv" / idioma)
+            print(f"cv/{idioma}/{cv.NOMBRE_PDF}: {inf['paginas']} página(s)")
         return
     con = db.conectar()
     oferta = con.execute("SELECT semana, titulo FROM ofertas WHERE id = ?", (args.id,)).fetchone()
