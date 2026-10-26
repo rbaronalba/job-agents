@@ -57,7 +57,7 @@ respuestas:
   preguntas: {}     # pregunta -> respuesta que ya hayas dado
 
 envio:
-  modo: revision                   # revision | semiauto (InfoJobs y Tecnoempleo; LinkedIn siempre revision)
+  modo: revision                   # revision: rellena y para antes de enviar | auto: Claude envía en todos los portales
   max_diario_portales: 15
   espontaneas_modo: borrador       # borrador | auto
   espontaneas_max_diario: 10
