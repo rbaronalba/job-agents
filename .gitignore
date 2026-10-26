@@ -6,6 +6,7 @@
 !/README.md
 !/requirements.txt
 !/.env.example
+!/diario.bat
 
 !/.claude/
 /.claude/*

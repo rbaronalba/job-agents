@@ -60,7 +60,9 @@ envio:
   modo: revision                   # revision: rellena y para antes de enviar | auto: Claude envía en todos los portales
   max_diario_portales: 15
   espontaneas_modo: borrador       # borrador | auto
-  espontaneas_max_diario: 10
+  espontaneas_max_diario: 15
+  espontaneas_objetivo_diario: 12  # empresas nuevas por día (10 a 15)
+  espontaneas_ambito: toda España, empresas de desarrollo de software con puestos de frontend
   espontaneas_dias_sin_repetir: 90
 
 # Proyecto de seguimiento de candidaturas ya enviadas (para no repetir ofertas)
