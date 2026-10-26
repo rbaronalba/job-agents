@@ -4,6 +4,7 @@
   guardar     Guarda o fusiona ofertas (JSON) en el histórico
   listar      Lista ofertas por estado
   estado      Cambia el estado de una oferta
+  excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
 """
 from __future__ import annotations
@@ -86,8 +87,6 @@ def cmd_guardar(args):
         if not o.get("empresa") or not o.get("titulo"):
             print(f"Ignorada (sin empresa o título): {o.get('urls')}", file=sys.stderr)
             continue
-        if o.get("encaje") is not None and o["encaje"] < perfil()["encaje"]["umbral_guardar"] and not o.get("estado"):
-            o["estado"] = "descartada"
         oid, nueva = db.guardar(con, o)
         res["nuevas" if nueva else "fusionadas"].append(f"{oid} {o['empresa']} | {o['titulo']} ({o.get('encaje')})")
     con.commit()
@@ -119,6 +118,15 @@ def cmd_estado(args):
     print(f"{args.id} -> {args.estado}")
 
 
+def cmd_excel(args):
+    from . import excel
+    con = db.conectar()
+    destino, cambios = excel.exportar(con, args.semana)
+    for c in cambios:
+        print(c)
+    print(f"Excel actualizado: {destino.relative_to(RAIZ)}")
+
+
 def cmd_resumen(args):
     con = db.conectar()
     hoy = date.today().isoformat()
@@ -126,7 +134,7 @@ def cmd_resumen(args):
     lineas = [
         f"# Resumen {datetime.now():%Y-%m-%d %H:%M}",
         f"- Ofertas nuevas hoy: {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado != ?', hoy, 'descartada')}",
-        f"- Descartadas hoy por encaje bajo: {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado = ?', hoy, 'descartada')}",
+        f"- Descartadas hoy (idioma o presencial fuera): {q('SELECT COUNT(*) FROM ofertas WHERE creada >= ? AND estado = ?', hoy, 'descartada')}",
         f"- CVs adaptados pendientes de enviar: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'cv_adaptado')}",
         f"- Pendientes de tu revisión: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'pendiente_revision')}",
         f"- Candidaturas enviadas hoy: {q('SELECT COUNT(*) FROM ofertas WHERE enviada = ?', hoy)}",
@@ -161,6 +169,10 @@ def main(argv=None):
     s = sub.add_parser("estado")
     s.add_argument("id"); s.add_argument("estado", choices=db.ESTADOS); s.add_argument("--nota")
     s.set_defaults(fn=cmd_estado)
+
+    s = sub.add_parser("excel", help="Importa cambios manuales y regenera el Excel semanal")
+    s.add_argument("--semana", help="AAAA-Www (por defecto la actual)")
+    s.set_defaults(fn=cmd_excel)
 
     s = sub.add_parser("resumen"); s.add_argument("--errores"); s.set_defaults(fn=cmd_resumen)
 

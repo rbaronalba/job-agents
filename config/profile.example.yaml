@@ -40,11 +40,13 @@ busquedas:
     - desarrollador frontend
     - frontend developer remoto
   dias: week                       # antigüedad máxima: day | week
-  max_detalles_por_ejecucion: 30   # tope de fichas completas pedidas por ejecución
+  max_detalles_por_ejecucion: 50   # tope de fichas completas pedidas por ejecución
 
 encaje:
-  umbral_adaptar: 60               # el adaptador procesa ofertas nuevas con encaje >= umbral
-  umbral_guardar: 35               # por debajo se guarda como descartada (para no volver a pedirla)
+  # El encaje solo ordena e informa: se adapta CV y se postula a TODAS las ofertas.
+  # Únicas exclusiones automáticas (se guardan como descartada):
+  descartar_idiomas: [alemán, francés, italiano]   # exigidos y que no hablas
+  descartar_presencial_fuera: true                 # presencial/híbrido fuera de ubicaciones.aceptadas
 
 envio:
   modo: revision                   # revision | semiauto (InfoJobs y Tecnoempleo; LinkedIn siempre revision)
