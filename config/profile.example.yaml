@@ -1,0 +1,57 @@
+# Copia este archivo como config/profile.yaml (ignorado por git) y rellena tus datos.
+
+candidato:
+  nombre: Nombre Apellidos
+  email: tu@email.com
+  telefono: "+34 600 000 000"
+  ciudad: Tu ciudad, España
+  linkedin: linkedin.com/in/tu-perfil
+  web: tuweb.es
+  ingles: B2
+  disponibilidad: inmediata
+  expectativa_salarial: null   # null = no responder, la oferta queda en pendiente_revision
+
+puestos:
+  principales: [Frontend Engineer, Frontend Developer, Angular Developer, Software Engineer frontend, Full Stack Angular]
+  secundarios: [AI Engineer, Football data analyst]   # se marcan aparte en el Excel
+
+nivel:
+  experiencia_anios: 2            # experiencia real; ofertas que pidan mas de max_anios_pedidos son eliminatorias
+  max_anios_pedidos: 3
+
+ubicaciones:
+  aceptadas: [Tu ciudad, Sevilla, Málaga, Madrid]
+  remoto_espana: true
+  europa_solo_ingles: true        # resto de Europa solo si no exige alemán, francés o italiano
+
+preferencias:
+  modalidad: [remoto, híbrido]
+  contrato: indefinido
+
+# Búsquedas del agente buscador (Composio). Cada una cuesta < 0,01 $.
+busquedas:
+  linkedin:
+    - {query: Angular developer, location: Spain}
+    - {query: Frontend developer, location: Spain}
+    - {query: Frontend engineer, location: Spain, workplace_types: remote}
+    - {query: Full stack Angular, location: Spain}
+  google_jobs:                     # JSearch: incluye Tecnoempleo, BeBee, webs de empresa
+    - desarrollador angular
+    - desarrollador frontend
+    - frontend developer remoto
+  dias: week                       # antigüedad máxima: day | week
+  max_detalles_por_ejecucion: 30   # tope de fichas completas pedidas por ejecución
+
+encaje:
+  umbral_adaptar: 60               # el adaptador procesa ofertas nuevas con encaje >= umbral
+  umbral_guardar: 35               # por debajo se guarda como descartada (para no volver a pedirla)
+
+envio:
+  modo: revision                   # revision | semiauto (InfoJobs y Tecnoempleo; LinkedIn siempre revision)
+  max_diario_portales: 15
+  espontaneas_modo: borrador       # borrador | auto
+  espontaneas_max_diario: 10
+  espontaneas_dias_sin_repetir: 90
+
+# Proyecto de seguimiento de candidaturas ya enviadas (para no repetir ofertas)
+candidaturas_sync: ../candidaturas-sync
