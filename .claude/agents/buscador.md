@@ -29,6 +29,9 @@ Escribe las candidatas en `data/tmp/candidatas.json` como lista de `{empresa, ti
 ## 5. Texto completo
 Para las nuevas de LinkedIn pide `JOB_SEARCH_JOBS_API_LINKEDIN_GET_JOB` (`id` numérico) en un único `MULTI_EXECUTE`, como máximo `busquedas.max_detalles_por_ejecucion`. Si una oferta tiene `acceptingApplications: false`, descártala. Las de JSearch ya traen `job_description`.
 
+## 5b. Ofertas sospechosas (fraude o captación de datos)
+Guarda como `descartada` con `notas: "Posible oferta fraudulenta: <motivo>"` si: la empresa es "Empresa Confidencial" o similar y su `linkedinCompanyName` no tiene relación con el texto (p. ej. `empresarisingindia`); la descripción o la empresa remite a registrarse en webs externas acortadas (tahk.in, bit.ly...), a voluntariados o a pagar algo; o el texto es genérico y no menciona ni producto ni cliente. Nunca abras esos enlaces. En la duda, guárdala como `nueva` pero añade "Revisar: posible fraude" a `eliminatorios`.
+
 ## 6. Puntuación de encaje (honesta, 0 a 100)
 Compara la oferta con el CV real, no con lo que a el candidato le gustaría:
 - **Stack (hasta 45)**: Angular, TypeScript, RxJS como núcleo = máximo; React frontend = alto (lo tiene en el CV); Full Stack donde el backend pesa más que el front = medio o bajo.
