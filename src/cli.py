@@ -5,6 +5,7 @@
   listar      Lista ofertas por estado
   estado      Cambia el estado de una oferta
   cv          Genera el CV adaptado de una oferta y lo verifica
+  cv-empresa  CV adaptado a una empresa (candidatura espontánea)
   preparar    Deja el CV de una oferta listo para subir y muestra los datos del formulario
   enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
@@ -155,6 +156,17 @@ def cmd_cv(args):
     print(f"{args.id} -> cv_adaptado ({carpeta.relative_to(RAIZ)})")
 
 
+def cmd_cv_empresa(args):
+    """CV adaptado al perfil general de una empresa (candidatura espontánea): output/espontaneas/<slug>/."""
+    from . import cv
+    adapt = json.loads(Path(args.adaptacion).read_text(encoding="utf-8"))
+    carpeta = RAIZ / "output" / "espontaneas" / args.slug
+    inf = cv.generar(adapt, carpeta)
+    print(json.dumps({k: v for k, v in inf.items() if k != "texto"} | {"cv": str(carpeta / cv.NOMBRE_PDF)}, ensure_ascii=False))
+    if inf["paginas"] > 1 or inf["guiones_prohibidos"]:
+        raise SystemExit("CV NO válido: recorta a una página y quita guiones largos")
+
+
 def cmd_preparar(args):
     """Deja el CV en output/SUBIR/<id>/ (carpeta fácil de elegir en el diálogo de Windows) y devuelve lo necesario para postular."""
     import shutil
@@ -264,6 +276,11 @@ def main(argv=None):
     s.add_argument("id", help="ID de oferta o 'base'")
     s.add_argument("adaptacion", nargs="?", help="JSON de adaptación (obligatorio salvo con 'base')")
     s.set_defaults(fn=cmd_cv)
+
+    s = sub.add_parser("cv-empresa", help="CV adaptado a una empresa para candidatura espontánea")
+    s.add_argument("slug", help="identificador corto de la empresa, p. ej. kong-software")
+    s.add_argument("adaptacion")
+    s.set_defaults(fn=cmd_cv_empresa)
 
     s = sub.add_parser("preparar", help="Copia el CV a output/SUBIR/<id>/ y muestra datos para postular")
     s.add_argument("id")
