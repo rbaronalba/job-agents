@@ -127,10 +127,13 @@ def cmd_cv(args):
             print(f"output/base/{idioma}/{cv.NOMBRE_PDF}: {inf['paginas']} página(s)")
         return
     con = db.conectar()
-    oferta = con.execute("SELECT semana FROM ofertas WHERE id = ?", (args.id,)).fetchone()
+    oferta = con.execute("SELECT semana, titulo FROM ofertas WHERE id = ?", (args.id,)).fetchone()
     if not oferta:
         raise SystemExit(f"No existe la oferta {args.id}")
     adapt = json.loads(Path(args.adaptacion).read_text(encoding="utf-8"))
+    # El titular del CV debe llevar el título exacto del puesto (sin etiquetas tipo "(m/f/d)" o "(remoto)")
+    if db.norm(oferta["titulo"]) not in db.norm(adapt.get("titular", "")):
+        raise SystemExit(f"CV NO válido: el titular debe incluir el título del puesto '{oferta['titulo']}'")
     carpeta = RAIZ / "output" / oferta["semana"] / args.id
     inf = cv.generar(adapt, carpeta)
     (carpeta / "adaptacion.json").write_text(json.dumps(adapt, ensure_ascii=False, indent=1), encoding="utf-8")

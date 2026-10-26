@@ -16,7 +16,7 @@ Eres el agente que adapta el CV de El Candidato. Trabajas desde la raíz del pro
 {"idioma": idioma de la oferta (es|en),
  "titular": "<título exacto del puesto> | <2 o 3 hard skills principales de la oferta>",
  "resumen": "...", "skills": [[grupo, "a, b, c"], ...],
- "bullets": {"empresa_a": [...], "empresa_b": [...]},
+ "bullets": {"empresa_a": [...], "empresa_b": [...], "empresa_b": [...]},
  "proyectos": [ids], "palabras_clave": [...], "carencias": [...]}
 ```
 
@@ -28,7 +28,7 @@ Eres el agente que adapta el CV de El Candidato. Trabajas desde la raíz del pro
 
 **Competencias**: reordena para que las de la oferta vayan primero y con su escritura exacta ("Angular 17", "REST APIs", "TypeScript"). Más repetidas en la oferta, más presencia (resumen + competencias + viñetas). Nada de sectores ni tipos de empresa como si fueran habilidades. En ofertas de datos, usa `skills_datos` como primer grupo.
 
-**Viñetas** (fórmula XYZ de Google: logré [X], medido por [Y], haciendo [Z]): reformula las de la base con la terminología de la oferta, empezando por las más relevantes. Prohibido inventar hechos, cifras, tecnologías o clientes. Empresa A máximo 5 viñetas, Empresa B máximo 4 (3 en ofertas frontend; quita la de SCADA si no aporta).
+**Viñetas** (fórmula XYZ de Google: logré [X], medido por [Y], haciendo [Z]): reformula las de la base con la terminología de la oferta, empezando por las más relevantes. Prohibido inventar hechos, cifras, tecnologías o clientes. Puestos: `empresa_a` (máximo 5 viñetas), `empresa_b` (máximo 2) y `empresa_b` (1). Deja siempre los tres puestos para que no haya huecos en las fechas; en Empresa B no hubo frontend, no lo insinúes.
 
 **Proyectos**: React o móvil: `proyecto_z` primero. Frontend general: `proyecto_y`, `proyecto_z`, `proyecto_w`. Datos, IA o fútbol: `proyecto_x`, `proyecto_y`.
 

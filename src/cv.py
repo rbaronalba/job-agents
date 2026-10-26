@@ -77,7 +77,7 @@ def verificar(pdf: Path, palabras_clave: list[str]) -> dict:
     lector = PdfReader(str(pdf))
     texto = "\n".join(p.extract_text() or "" for p in lector.pages)
     plano = _norm(texto)
-    encontradas = [k for k in palabras_clave if re.search(rf"(?<![a-z0-9]){re.escape(_norm(k))}(?![a-z0-9])", plano)]
+    encontradas = [k for k in palabras_clave if re.search(rf"(?<![a-z0-9]){re.escape(_norm(k))}(?:e?s)?(?![a-z0-9])", plano)]  # admite plural
     faltan = [k for k in palabras_clave if k not in encontradas]
     meta = lector.metadata or {}
     return {
