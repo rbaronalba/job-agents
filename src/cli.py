@@ -5,6 +5,8 @@
   listar      Lista ofertas por estado
   estado      Cambia el estado de una oferta
   cv          Genera el CV adaptado de una oferta y lo verifica
+  preparar    Deja el CV de una oferta listo para subir y muestra los datos del formulario
+  enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
 """
@@ -153,6 +155,59 @@ def cmd_cv(args):
     print(f"{args.id} -> cv_adaptado ({carpeta.relative_to(RAIZ)})")
 
 
+def cmd_preparar(args):
+    """Deja el CV en output/SUBIR/<id>/ (carpeta fácil de elegir en el diálogo de Windows) y devuelve lo necesario para postular."""
+    import shutil
+    con = db.conectar()
+    o = con.execute("SELECT * FROM ofertas WHERE id = ?", (args.id,)).fetchone()
+    if not o:
+        raise SystemExit(f"No existe la oferta {args.id}")
+    origen = RAIZ / "output" / o["semana"] / args.id
+    cv = origen / "CV_Candidato.pdf"
+    if not cv.exists():
+        raise SystemExit(f"{args.id} no tiene CV adaptado; ejecuta /adaptar primero")
+    subir = RAIZ / "output" / "SUBIR" / args.id
+    subir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cv, subir / cv.name)
+    carta = origen / "carta.txt"
+    p = perfil()
+    print(json.dumps({
+        "id": o["id"], "empresa": o["empresa"], "titulo": o["titulo"], "portales": json.loads(o["portales"]),
+        "urls": json.loads(o["urls"]), "tipo_candidatura": o["tipo_candidatura"],
+        "cv": str(subir / cv.name), "carta": carta.read_text(encoding="utf-8") if carta.exists() else None,
+        "candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": p["envio"]["modo"],
+    }, ensure_ascii=False, indent=1))
+
+
+def registrar_en_seguimiento(o, origen: str) -> str:
+    """Añade la candidatura a candidaturas.xlsx (candidaturas-sync) cuando el portal no manda correo de confirmación."""
+    import subprocess
+    carpeta = perfil().get("candidaturas_sync")
+    if not carpeta:
+        return "sin candidaturas_sync configurado"
+    raiz = (RAIZ / carpeta).resolve()
+    url = (json.loads(o["urls"]) or [None])[0]
+    cmd = [sys.executable, "-m", "candidaturas", "nueva", "--empresa", o["empresa"], "--puesto", o["titulo"],
+           "--origen", origen, "--nota", f"Enviada por job-agents ({o['id']})"] + (["--enlace", url] if url else [])
+    r = subprocess.run(cmd, cwd=raiz, capture_output=True, text=True, encoding="utf-8")
+    return (r.stdout or r.stderr).strip()
+
+
+def cmd_enviada(args):
+    con = db.conectar()
+    o = con.execute("SELECT * FROM ofertas WHERE id = ?", (args.id,)).fetchone()
+    if not o:
+        raise SystemExit(f"No existe la oferta {args.id}")
+    db.cambiar_estado(con, args.id, "enviada", f"Enviada por {args.origen}")
+    con.commit()
+    print(f"{args.id} -> enviada")
+    # LinkedIn manda "se ha enviado tu solicitud" y candidaturas-sync la detecta sola
+    if args.origen.lower() != "linkedin":
+        print("Seguimiento:", registrar_en_seguimiento(o, args.origen))
+    import shutil
+    shutil.rmtree(RAIZ / "output" / "SUBIR" / args.id, ignore_errors=True)
+
+
 def cmd_excel(args):
     from . import excel
     con = db.conectar()
@@ -209,6 +264,15 @@ def main(argv=None):
     s.add_argument("id", help="ID de oferta o 'base'")
     s.add_argument("adaptacion", nargs="?", help="JSON de adaptación (obligatorio salvo con 'base')")
     s.set_defaults(fn=cmd_cv)
+
+    s = sub.add_parser("preparar", help="Copia el CV a output/SUBIR/<id>/ y muestra datos para postular")
+    s.add_argument("id")
+    s.set_defaults(fn=cmd_preparar)
+
+    s = sub.add_parser("enviada", help="Marca enviada y la registra en candidaturas-sync si hace falta")
+    s.add_argument("id")
+    s.add_argument("--origen", required=True, help="LinkedIn, InfoJobs, Tecnoempleo, Web empresa...")
+    s.set_defaults(fn=cmd_enviada)
 
     s = sub.add_parser("excel", help="Importa cambios manuales y regenera el Excel semanal")
     s.add_argument("--semana", help="AAAA-Www (por defecto la actual)")

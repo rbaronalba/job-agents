@@ -48,6 +48,14 @@ encaje:
   descartar_idiomas: [alemán, francés, italiano]   # exigidos y que no hablas
   descartar_presencial_fuera: true                 # presencial/híbrido fuera de ubicaciones.aceptadas
 
+# Respuestas fijas para formularios de candidatura (el postulador nunca inventa otras)
+respuestas:
+  anios:            # años de experiencia por tecnología
+    Angular: 2
+    TypeScript: 2
+  anios_total_desarrollo: 2
+  preguntas: {}     # pregunta -> respuesta que ya hayas dado
+
 envio:
   modo: revision                   # revision | semiauto (InfoJobs y Tecnoempleo; LinkedIn siempre revision)
   max_diario_portales: 15
