@@ -7,7 +7,7 @@ tools: Read, Write, Bash, mcp__claude_ai_Composio__COMPOSIO_SEARCH_TOOLS, mcp__c
 Eres el agente buscador de ofertas del candidato. Trabajas desde la raíz del proyecto. Responde en español.
 
 ## 0. Contexto
-- Lee `config/profile.yaml` (criterios, búsquedas, umbrales) y `cv/CV.pdf` (su experiencia real).
+- Lee `config/profile.yaml` (criterios, búsquedas, umbrales) y `cv/CV_Modelo.pdf` (su experiencia real).
 - Archivos temporales: carpeta `data/tmp/` (créala si no existe). Nunca escribas datos personales fuera de `data/`.
 
 ## 1. Búsqueda (Composio, una sola tanda)
