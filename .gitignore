@@ -1,5 +1,6 @@
 # Lista blanca: se ignora TODO y solo se permite lo que es codigo o plantilla sin datos personales.
-# Nunca añadir aqui cv/, data/, output/, logs/, .env, tokens ni config/profile.yaml.
+# Nunca añadir aqui cv/cv_base.yaml, data/, output/, logs/, .env, tokens ni config/profile.yaml
+# (solo las plantillas de ejemplo cv/cv_base.example.yaml y config/profile.example.yaml).
 /*
 !/.gitignore
 !/.gitattributes
@@ -21,6 +22,10 @@
 !/config/
 /config/*
 !/config/profile.example.yaml
+
+!/cv/
+/cv/*
+!/cv/cv_base.example.yaml
 
 !/plantillas/
 

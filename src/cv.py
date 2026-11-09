@@ -1,10 +1,10 @@
-"""CV_Candidato.pdf: CV maestro (cv/cv_base.yaml) + adaptación por oferta (JSON) -> HTML -> PDF verificado.
+"""CV del candidato: CV maestro (cv/cv_base.yaml) + adaptación por oferta (JSON) -> HTML -> PDF verificado.
 
 Adaptación (todo opcional salvo idioma):
   {"idioma": "es"|"en", "titular": str, "resumen": str,
    "skills": [[grupo, "a, b, c"], ...],          # sustituye los grupos de la base
-   "bullets": {"empresa_a": [...], "empresa_b": [...]},  # sustituye viñetas de un puesto (solo hechos de la base)
-   "proyectos": ["proyecto_y", "proyecto_x"],            # ids y orden; por defecto proyectos_por_defecto
+   "bullets": {"<id de experiencia>": [...], ...},  # sustituye viñetas de un puesto (solo hechos de la base)
+   "proyectos": ["<id de proyecto>", ...],       # ids y orden; por defecto proyectos_por_defecto
    "palabras_clave": ["Angular", "RxJS", ...]}   # para medir la coincidencia en el PDF
 """
 from __future__ import annotations
@@ -20,8 +20,7 @@ from pypdf import PdfReader, PdfWriter
 from .db import RAIZ
 
 BASE = RAIZ / "cv" / "cv_base.yaml"
-NOMBRE_PDF = "CV_Candidato.pdf"
-TITULO_PDF = "CV_Candidato"
+PROFILE = RAIZ / "config" / "profile.yaml"
 GUIONES_PROHIBIDOS = "—–"  # em dash, en dash
 
 
@@ -29,6 +28,9 @@ def componer(adapt: dict) -> tuple[dict, dict]:
     base = yaml.safe_load(BASE.read_text(encoding="utf-8"))
     idioma = adapt.get("idioma", "es")
     cv = dict(base[idioma])
+    perfil = adapt.get("perfil")
+    if perfil:
+        cv.update(cv["perfiles"][perfil])
     for k in ("titular", "resumen", "skills"):
         if adapt.get(k):
             cv[k] = adapt[k]
@@ -63,7 +65,7 @@ def _pdf_desde_html(contenido: str, destino: Path):
 
 def _metadatos(destino: Path, nombre: str, asunto: str):
     w = PdfWriter(clone_from=str(destino))
-    w.add_metadata({"/Title": TITULO_PDF, "/Author": nombre, "/Subject": asunto, "/Creator": nombre, "/Producer": nombre})
+    w.add_metadata({"/Title": titulo_pdf(), "/Author": nombre, "/Subject": asunto, "/Creator": nombre, "/Producer": nombre})
     with open(destino, "wb") as f:
         w.write(f)
 
@@ -71,6 +73,19 @@ def _metadatos(destino: Path, nombre: str, asunto: str):
 def _norm(t: str) -> str:
     t = unicodedata.normalize("NFKD", t.lower())
     return " ".join("".join(c for c in t if not unicodedata.combining(c)).split())
+
+
+def titulo_pdf() -> str:
+    """"CV_<Nombre><Apellidos>", derivado de candidato.nombre en config/profile.yaml."""
+    try:
+        nombre = yaml.safe_load(PROFILE.read_text(encoding="utf-8"))["candidato"]["nombre"]
+    except (FileNotFoundError, KeyError, TypeError):
+        nombre = "Candidato"
+    return "CV_" + "".join(p.capitalize() for p in _norm(nombre).split())
+
+
+def nombre_pdf() -> str:
+    return titulo_pdf() + ".pdf"
 
 
 def verificar(pdf: Path, palabras_clave: list[str]) -> dict:
@@ -92,12 +107,12 @@ def verificar(pdf: Path, palabras_clave: list[str]) -> dict:
 
 
 def generar(adapt: dict, carpeta: Path) -> dict:
-    """Genera carpeta/CV_Candidato.pdf y devuelve el informe de verificación."""
+    """Genera carpeta/<CV del candidato>.pdf y devuelve el informe de verificación."""
     textos = [adapt.get("titular", ""), adapt.get("resumen", ""), str(adapt.get("skills", "")), str(adapt.get("bullets", ""))]
     if any(g in t for t in textos for g in GUIONES_PROHIBIDOS):
         raise ValueError("La adaptación contiene guiones largos o medios; reescríbela sin ellos.")
     carpeta.mkdir(parents=True, exist_ok=True)
-    destino = carpeta / NOMBRE_PDF
+    destino = carpeta / nombre_pdf()
     contenido = html(adapt)
     _pdf_desde_html(contenido, destino)
     cv, contacto = componer(adapt)
@@ -108,12 +123,13 @@ def generar(adapt: dict, carpeta: Path) -> dict:
 if __name__ == "__main__":
     # Autocomprobación: los dos CV base salen en una página, con metadatos y sin guiones largos
     import tempfile
+    contacto = yaml.safe_load(BASE.read_text(encoding="utf-8"))["contacto"]
     for idioma in ("es", "en"):
         inf = generar({"idioma": idioma, "palabras_clave": ["Angular", "TypeScript", "RxJS", "Jest", "Kubernetes"]},
                       Path(tempfile.mkdtemp()))
         assert inf["paginas"] == 1, (idioma, inf["paginas"])
-        assert inf["titulo_pdf"] == TITULO_PDF and inf["autor_pdf"] == "El Candidato", inf
+        assert inf["titulo_pdf"] == titulo_pdf() and inf["autor_pdf"] == contacto["nombre"], inf
         assert not inf["guiones_prohibidos"]
         assert inf["coincidencia"] == 80 and inf["faltan"] == ["Kubernetes"], inf["faltan"]
-        assert "linkedin.com/in/candidato-ejemplo" in inf["texto"]
+        assert contacto["linkedin"] in inf["texto"]
     print("cv.py OK")

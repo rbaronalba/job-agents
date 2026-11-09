@@ -2,7 +2,7 @@
 <html lang="{{ idioma }}">
 <head>
 <meta charset="utf-8">
-<title>CV_Candidato</title>
+<title>{{ c.nombre }}</title>
 <meta name="author" content="{{ c.nombre }}">
 <style>
   /* Checklist ATS: una columna, Arial, sin tablas ni iconos, nada en cabecera/pie, alineado a la izquierda */
@@ -20,19 +20,23 @@
   ul { margin: 2pt 0 0 13pt; }
   li { margin-bottom: 1.5pt; }
   .gris { color: #000; }
+  .bloque { break-inside: avoid; page-break-inside: avoid; }
+  .proyectos { display: flex; gap: 5pt; margin-top: 2pt; align-items: stretch; }
+  .proyecto { display: flex; flex-direction: column; border: 0.8pt solid #000; padding: 3pt 5pt; flex: 1 1 0;
+              box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
+  .proyecto .puesto { margin-top: 0; }
+  .proyecto a { color: #000; }
+  .descripcion { margin-top: 4pt; }
+  .enlaces { margin-top: auto; padding-top: 3pt; }
 </style>
 </head>
 <body>
 <h1>{{ c.nombre }}</h1>
 <div class="titular">{{ cv.titular }}</div>
-<div class="contacto">{{ cv.ciudad }} | {{ c.email }} | {{ c.telefono }} | {{ c.linkedin }} | {{ c.web }}</div>
+<div class="contacto">{{ cv.ciudad }} | {{ c.email }} | {{ c.telefono }} | {{ c.linkedin }} | {{ c.web }} | {{ c.github }}</div>
 
 <h2>{{ s.resumen }}</h2>
 <p>{{ cv.resumen }}</p>
-
-<h2>{{ s.skills }}</h2>
-{% for grupo, lista in cv.skills %}<p><b>{{ grupo }}:</b> {{ lista }}</p>
-{% endfor %}
 
 <h2>{{ s.experiencia }}</h2>
 {% for e in cv.experiencia %}
@@ -42,14 +46,26 @@
 
 {% if cv.proyectos %}
 <h2>{{ s.proyectos }}</h2>
+<div class="proyectos">
 {% for p in cv.proyectos %}
-<p class="puesto"><b>{{ p.nombre }}</b> | {{ p.tipo }}, {{ p.tech }} | {{ p.fechas }}</p>
-<ul>{% for b in (p.bullets if p.bullets is defined else [p.bullet]) %}<li>{{ b }}</li>{% endfor %}</ul>
+<div class="proyecto">
+<p class="puesto"><b>{{ p.nombre }}</b></p>
+<p>{{ p.tech }}</p>
+<p class="descripcion">{{ p.bullet }}</p>
+{% if p.enlaces is defined %}<p class="enlaces">{% for etiqueta, url in p.enlaces %}<a href="{{ url }}">{{ etiqueta }} ↗</a>{{ " " if not loop.last }}{% endfor %}</p>{% endif %}
+</div>
 {% endfor %}
+</div>
 {% endif %}
 
+<h2>{{ s.skills }}</h2>
+{% for grupo, lista in cv.skills %}<p><b>{{ grupo }}:</b> {{ lista }}</p>
+{% endfor %}
+
+<div class="bloque">
 <h2>{{ s.formacion }}</h2>
 {% for f in cv.formacion %}<p><b>{{ f[0] }}</b> | {{ f[1:-1] | join(", ") }} | {{ f[-1] }}</p>
 {% endfor %}<p><b>{{ s.idiomas }}:</b> {{ cv.idiomas }}</p>
+</div>
 </body>
 </html>

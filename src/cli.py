@@ -126,8 +126,11 @@ def cmd_cv(args):
     if args.id == "base":
         # Modelos fijos que se adjuntan en las candidaturas espontáneas
         for idioma in ("es", "en"):
-            inf = cv.generar({"idioma": idioma}, RAIZ / "cv" / idioma)
-            print(f"cv/{idioma}/{cv.NOMBRE_PDF}: {inf['paginas']} página(s)")
+            inf = cv.generar({"idioma": idioma}, RAIZ / "cv" / "front" / idioma)
+            print(f"cv/front/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
+            for perfil in ("ia", "datos"):
+                inf = cv.generar({"idioma": idioma, "perfil": perfil}, RAIZ / "cv" / perfil / idioma)
+                print(f"cv/{perfil}/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
         return
     con = db.conectar()
     oferta = con.execute("SELECT semana, titulo FROM ofertas WHERE id = ?", (args.id,)).fetchone()
@@ -159,23 +162,24 @@ def cmd_cv(args):
 def cmd_preparar(args):
     """Deja el CV en output/SUBIR/<id>/ (carpeta fácil de elegir en el diálogo de Windows) y devuelve lo necesario para postular."""
     import shutil
+    from . import cv as cv_mod
     con = db.conectar()
     o = con.execute("SELECT * FROM ofertas WHERE id = ?", (args.id,)).fetchone()
     if not o:
         raise SystemExit(f"No existe la oferta {args.id}")
     origen = RAIZ / "output" / o["semana"] / args.id
-    cv = origen / "CV_Candidato.pdf"
-    if not cv.exists():
+    cv_pdf = origen / cv_mod.nombre_pdf()
+    if not cv_pdf.exists():
         raise SystemExit(f"{args.id} no tiene CV adaptado; ejecuta /adaptar primero")
     subir = RAIZ / "output" / "SUBIR" / args.id
     subir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(cv, subir / cv.name)
+    shutil.copy2(cv_pdf, subir / cv_pdf.name)
     carta = origen / "carta.txt"
     p = perfil()
     print(json.dumps({
         "id": o["id"], "empresa": o["empresa"], "titulo": o["titulo"], "portales": json.loads(o["portales"]),
         "urls": json.loads(o["urls"]), "tipo_candidatura": o["tipo_candidatura"],
-        "cv": str(subir / cv.name), "carta": carta.read_text(encoding="utf-8") if carta.exists() else None,
+        "cv": str(subir / cv_pdf.name), "carta": carta.read_text(encoding="utf-8") if carta.exists() else None,
         "candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": p["envio"]["modo"],
     }, ensure_ascii=False, indent=1))
 
@@ -261,7 +265,7 @@ def main(argv=None):
     s.add_argument("id"); s.add_argument("estado", choices=db.ESTADOS); s.add_argument("--nota")
     s.set_defaults(fn=cmd_estado)
 
-    s = sub.add_parser("cv", help="Genera CV_Candidato.pdf para una oferta (o 'base')")
+    s = sub.add_parser("cv", help="Genera el CV del candidato para una oferta (o 'base')")
     s.add_argument("id", help="ID de oferta o 'base'")
     s.add_argument("adaptacion", nargs="?", help="JSON de adaptación (obligatorio salvo con 'base')")
     s.set_defaults(fn=cmd_cv)

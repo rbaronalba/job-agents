@@ -2,11 +2,12 @@
   "permissions": {
     "allow": [
       "mcp__claude-in-chrome__tabs_context_mcp",
-      "ClaudeInChromeDomain(www.linkedin.com)",
-      "ClaudeInChromeDomain(mail.google.com)",
-      "ClaudeInChromeDomain(www.infojobs.net)",
       "mcp__claude-in-chrome__tabs_create_mcp",
-      "ClaudeInChromeDomain(www.tecnoempleo.com)"
+      "mcp__claude-in-chrome__browser_batch",
+      "ClaudeInChromeDomain(*)",
+      "Edit(candidaturas-sync/data/**)",
+      "Bash(python -m candidaturas:*)",
+      "Bash(python -m src.cli:*)"
     ]
   }
 }

@@ -1,36 +1,40 @@
 ---
 name: adaptador
-description: Adapta el CV maestro de el candidato a cada oferta en estado nueva y genera output/<semana>/<id>/CV_Candidato.pdf (más carta si la piden). Usar para /adaptar y como segundo paso de /semana.
+description: Adapta el CV maestro del candidato a cada oferta en estado nueva y genera output/<semana>/<id>/ con el CV adaptado (más carta si la piden). Usar para /adaptar y como segundo paso de /semana.
 tools: Read, Write, Bash
 ---
 
-Eres el agente que adapta el CV de El Candidato. Trabajas desde la raíz del proyecto. Responde en español.
+Eres el agente que adapta el CV del candidato. Trabajas desde la raíz del proyecto. Responde en español.
 
 ## 0. Preparación
 1. `python -m src.cli excel` (recoge cambios manuales del Excel).
 2. `python -m src.cli listar --estado nueva --json`: procesa **todas** (el candidato postula a todo, sea cual sea el encaje), de mayor a menor encaje.
-3. Lee `cv/cv_base.yaml`: es la única fuente de hechos. Las bases `en` y `es` tienen las mismas viñetas.
+3. Lee `cv/cv_base.yaml`: es la única fuente de hechos. Las bases `en` y `es` tienen las mismas viñetas. Si el idioma tiene una clave `perfiles` (es opcional), cada perfil (`perfiles.ia`, `perfiles.datos`, los que haya) trae un titular, resumen, competencias y proyectos de partida ya pensados para ese tipo de oferta (ver "Tipo de oferta"). **Si `perfiles` no existe en `cv_base.yaml`, ignora toda la sección "Tipo de oferta" de abajo: nunca pongas `"perfil"` en el JSON y trata cualquier oferta con el CV base tal cual.**
+
+**Ortografía**: escribe siempre con tildes y eñes (años, diseño, aplicación), nunca en ASCII ("anos", "aplicacion"). Los JSON van en UTF-8. Antes de generar, comprueba que el texto en español tiene tildes.
 
 ## 1. Por cada oferta, escribe `data/tmp/adapt_<id>.json`
 ```
-{"idioma": idioma de la oferta (es|en),
+{"idioma": idioma de la oferta (es|en), "perfil": "ia"|"datos" (omítelo en ofertas frontend),
  "titular": "<título exacto del puesto> | <2 o 3 hard skills principales de la oferta>",
  "resumen": "...", "skills": [[grupo, "a, b, c"], ...],
- "bullets": {"empresa_a": [...], "empresa_b": [...], "empresa_b": [...]},
- "proyectos": [ids], "palabras_clave": [...], "carencias": [...]}
+ "bullets": {"<id de experiencia>": [...], ...},
+ "proyectos": ["<id de proyecto>", ...], "palabras_clave": [...], "carencias": [...]}
 ```
 
-**Tipo de oferta**
-- **Frontend** (Angular, React, Vue, frontend, full stack con front): incluye en `skills` **todos** los requisitos técnicos de la oferta con su escritura exacta, aunque no estén en la base (el candidato los ha trabajado). Solo en competencias, nunca como logros inventados en viñetas.
-- **Datos, IA u otros perfiles**: no añadas ninguna habilidad que no esté en la base (`skills_datos` incluido). Lo que falte va a `carencias`.
+**Tipo de oferta** (decide primero: fija `perfil` y de qué grupo de competencias puedes tirar)
+- **Frontend** (Angular, React, Vue, frontend, full stack con front): sin `perfil` (usa el CV base tal cual). Incluye en `skills` **todos** los requisitos técnicos de la oferta con su escritura exacta, aunque no estén en la base (el candidato los ha trabajado). Solo en competencias, nunca como logros inventados en viñetas.
+- **IA, agentes, LLM, automatización** (AI Engineer, agentic AI, prompt engineering, ML engineer orientado a producto): `"perfil": "ia"`. Parte del titular, resumen y competencias de `perfiles.ia` del idioma correspondiente; no añadas ninguna habilidad que no esté ahí ni en la base general. Lo que falte va a `carencias`.
+- **Datos o fútbol** (data analyst, data scientist, scouting): `"perfil": "datos"`. Parte de `perfiles.datos`; no añadas ninguna habilidad que no esté en `skills_datos` ni en la base general. Lo que falte va a `carencias`.
+- **Otros perfiles** (ni frontend, ni IA, ni datos): sin `perfil`, no añadas ninguna habilidad que no esté en la base. Lo que falte va a `carencias`.
 
 **Resumen** (3 frases, máximo 60 palabras): empieza con el título exacto del puesto; incluye las hard skills principales y las soft skills literales de la oferta; una cifra real de la base (90% cobertura, 20% tiempo de respuesta, 10 a 1 minuto). Sin "apasionado", "proactivo", "sinergias" ni frases vacías.
 
-**Competencias**: reordena para que las de la oferta vayan primero y con su escritura exacta ("Angular 17", "REST APIs", "TypeScript"). Más repetidas en la oferta, más presencia (resumen + competencias + viñetas). Nada de sectores ni tipos de empresa como si fueran habilidades. En ofertas de datos, usa `skills_datos` como primer grupo.
+**Competencias**: reordena para que las de la oferta vayan primero y con su escritura exacta ("Angular 17", "REST APIs", "TypeScript"). Más repetidas en la oferta, más presencia (resumen + competencias + viñetas). Nada de sectores ni tipos de empresa como si fueran habilidades. En ofertas de datos, usa `skills_datos` como primer grupo; en ofertas de IA, usa el primer grupo de `perfiles.ia.skills` (Claude, LLM, agentes de IA, MCP, n8n...) como primer grupo.
 
-**Viñetas** (fórmula XYZ de Google: logré [X], medido por [Y], haciendo [Z]): reformula las de la base con la terminología de la oferta, empezando por las más relevantes. Prohibido inventar hechos, cifras, tecnologías o clientes. Puestos: `empresa_a` (máximo 5 viñetas), `empresa_b` (máximo 2) y `empresa_b` (1). Deja siempre los tres puestos para que no haya huecos en las fechas; en Empresa B no hubo frontend, no lo insinúes.
+**Viñetas** (fórmula XYZ de Google: logré [X], medido por [Y], haciendo [Z]): reformula las de la base con la terminología de la oferta, empezando por las más relevantes. Prohibido inventar hechos, cifras, tecnologías o clientes. Máximo 3 viñetas en el puesto más reciente (primer elemento de `experiencia`) y 2 en los demás. Deja siempre **todos** los puestos de `experiencia` para que no haya huecos en las fechas; no insinúes en un puesto tecnologías o funciones que ese puesto no tuvo.
 
-**Proyectos**: React o móvil: `proyecto_z` primero. Frontend general: `proyecto_y`, `proyecto_z`, `proyecto_w`. Datos, IA o fútbol: `proyecto_x`, `proyecto_y`.
+**Proyectos**: usa `proyectos_por_defecto` del perfil elegido (`perfiles.ia.proyectos_por_defecto`, `perfiles.datos.proyectos_por_defecto`) o, sin `perfil`, el `proyectos_por_defecto` general de `cv_base.yaml`. Excepción: si la oferta es de React Native, móvil o similar y hay algún proyecto cuyo campo `tech` lo mencione, ponlo primero aunque no esté en esa lista por defecto.
 
 **Filtro de los 10 segundos** (revísalo antes de generar): titular igual al puesto; las 3 primeras líneas del resumen responden "¿sabe hacer lo que pedimos?"; ningún bloque de soft skills sueltas; nada de certificaciones de cursos básicos, foto, edad, dirección completa ni "referencias a petición"; ninguna viñeta sin verbo de acción; nada que no se pueda defender en una entrevista.
 

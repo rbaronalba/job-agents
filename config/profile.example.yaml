@@ -4,7 +4,7 @@ candidato:
   nombre: Nombre Apellidos
   email: tu@email.com
   telefono: "+34 600 000 000"
-  ciudad: Tu ciudad, España
+  ciudad: Tu ciudad, País
   linkedin: linkedin.com/in/tu-perfil
   web: tuweb.es
   ingles: B2
@@ -12,15 +12,15 @@ candidato:
   expectativa_salarial: null   # null = no responder, la oferta queda en pendiente_revision
 
 puestos:
-  principales: [Frontend Engineer, Frontend Developer, Angular Developer, Software Engineer frontend, Full Stack Angular]
-  secundarios: [AI Engineer, Football data analyst]   # se marcan aparte en el Excel
+  principales: [Puesto 1, Puesto 2, Puesto 3]   # títulos que buscas, de más a menos prioritario
+  secundarios: []   # opcional: puestos que también aceptas; se marcan aparte en el Excel
 
 nivel:
-  experiencia_anios: 2            # experiencia real; ofertas que pidan mas de max_anios_pedidos son eliminatorias
+  experiencia_anios: 0             # tu experiencia real; ofertas que pidan mas de max_anios_pedidos son eliminatorias
   max_anios_pedidos: 3
 
 ubicaciones:
-  aceptadas: [Tu ciudad, Sevilla, Málaga, Madrid]
+  aceptadas: [Tu ciudad, Otra ciudad aceptada]
   remoto_espana: true
   europa_solo_ingles: true        # resto de Europa solo si no exige alemán, francés o italiano
 
@@ -31,14 +31,10 @@ preferencias:
 # Búsquedas del agente buscador (Composio). Cada una cuesta < 0,01 $.
 busquedas:
   linkedin:
-    - {query: Angular developer, location: Spain}
-    - {query: Frontend developer, location: Spain}
-    - {query: Frontend engineer, location: Spain, workplace_types: remote}
-    - {query: Full stack Angular, location: Spain}
+    - {query: "<título o tecnología>", location: Spain}
+    - {query: "<otra búsqueda>", location: Spain, workplace_types: remote}
   google_jobs:                     # JSearch: incluye Tecnoempleo, BeBee, webs de empresa
-    - desarrollador angular
-    - desarrollador frontend
-    - frontend developer remoto
+    - "<título o tecnología>"
   dias: week                       # antigüedad máxima: day | week
   max_detalles_por_ejecucion: 50   # tope de fichas completas pedidas por ejecución
 
@@ -46,24 +42,36 @@ encaje:
   # El encaje solo ordena e informa: se adapta CV y se postula a TODAS las ofertas.
   # Únicas exclusiones automáticas (se guardan como descartada):
   descartar_idiomas: [alemán, francés, italiano]   # exigidos y que no hablas
+  salario_minimo: 0              # ofertas con sueldo publicado (máximo) inferior: se ignoran, ni se guardan ni se cuentan; 0 = sin mínimo
   descartar_presencial_fuera: true                 # presencial/híbrido fuera de ubicaciones.aceptadas
 
 # Respuestas fijas para formularios de candidatura (el postulador nunca inventa otras)
 respuestas:
-  anios:            # años de experiencia por tecnología
-    Angular: 2
-    TypeScript: 2
-  anios_total_desarrollo: 2
+  anios:            # años de experiencia por tecnología (las que suelan preguntarte en formularios)
+    "<Tecnología 1>": 0
+    "<Tecnología 2>": 0
+  anios_total_desarrollo: 0
   preguntas: {}     # pregunta -> respuesta que ya hayas dado
 
 envio:
+  max_diario_total: 30             # tope del día sumando portales y espontáneas
   modo: revision                   # revision: rellena y para antes de enviar | auto: Claude envía en todos los portales
   max_diario_portales: 15
   espontaneas_modo: borrador       # borrador | auto
   espontaneas_max_diario: 15
   espontaneas_objetivo_diario: 12  # empresas nuevas por día (10 a 15)
-  espontaneas_ambito: toda España, empresas de desarrollo de software con puestos de frontend
+  espontaneas_ambito: "<ámbito geográfico y tipo de empresas/puestos que aceptas>"
+  # Búsqueda por anillos concéntricos desde tu ciudad: no se pasa al siguiente hasta agotar el actual.
+  # Ejemplo con provincias españolas; sustitúyelo por anillos reales desde tu ciudad.
+  espontaneas_anillos:
+    - [Tu ciudad]
+    - [Provincias limítrofes]
+    - [Comunidad autónoma]
+    - [País]
+    - [resto de España y remoto]
+  espontaneas_anillo_actual: 0     # índice en espontaneas_anillos; lo sube Claude al agotar el anillo
   espontaneas_dias_sin_repetir: 90
 
-# Proyecto de seguimiento de candidaturas ya enviadas (para no repetir ofertas)
-candidaturas_sync: ../candidaturas-sync
+# Proyecto opcional de seguimiento de candidaturas ya enviadas (para no repetir ofertas).
+# null si no lo usas; si lo usas, pon la carpeta (p. ej. candidaturas-sync).
+candidaturas_sync: null

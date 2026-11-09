@@ -103,7 +103,8 @@ def guardar(con, oferta: dict) -> tuple[str, bool]:
         return previa["id"], False
 
     sem = semana()
-    n = con.execute("SELECT COUNT(*) FROM ofertas WHERE semana = ?", (sem,)).fetchone()[0] + 1
+    # MAX y no COUNT: la semana puede tener huecos si se borraron filas
+    n = con.execute("SELECT COALESCE(MAX(CAST(substr(id, -3) AS INTEGER)), 0) FROM ofertas WHERE semana = ?", (sem,)).fetchone()[0] + 1
     oid = f"{sem}-{n:03d}"
     valores = {c: oferta.get(c) for c in CAMPOS}
     if isinstance(valores["requisitos"], (list, dict)):
@@ -144,4 +145,10 @@ if __name__ == "__main__":
     assert norm("Desarrollador/a Frontend (m/f/d)") == "desarrollador a frontend"
     cambiar_estado(con, a, "enviada", "test")
     assert con.execute("SELECT enviada FROM ofertas").fetchone()[0] == date.today().isoformat()
+    # Con huecos en la numeración no debe repetir un id existente
+    d, _ = guardar(con, {"empresa": "Hueco", "titulo": "Uno"})
+    e, _ = guardar(con, {"empresa": "Hueco", "titulo": "Dos"})
+    con.execute("DELETE FROM ofertas WHERE id = ?", (d,))
+    g, nueva = guardar(con, {"empresa": "Hueco", "titulo": "Tres"})
+    assert nueva and g > e, (d, e, g)
     print("db.py OK")

@@ -1,0 +1,87 @@
+# CV maestro: la única fuente de hechos para el adaptador. Solo hechos reales, nunca inventados.
+# Viñetas en formato XYZ de Google: logré [X], medido por [Y], haciendo [Z].
+# Copia este archivo como cv/cv_base.yaml (ignorado por git) y rellénalo, o usa /configurar para que
+# Claude lo rellene a partir del CV que le pegues en el chat.
+#
+# Estructura: "contacto" es único; "es" y "en" son el mismo CV en cada idioma (mismos hechos,
+# redactados en su idioma). Si solo trabajas en un idioma, borra el bloque que no uses y quita su
+# referencia de src/cli.py (cmd_cv) y .claude/agents/espontaneas.md.
+#
+# "perfiles" es OPCIONAL: solo hace falta si, además de tu perfil principal, quieres poder adaptar
+# el CV a un segundo tipo de oferta muy distinto (p. ej. tu perfil es frontend pero también postulas
+# a datos). Si no lo necesitas, borra la clave "perfiles" entera (en los dos idiomas) y dile al
+# agente `adaptador` que no hay perfiles secundarios.
+
+contacto:
+  nombre: Nombre Apellidos
+  email: tu@email.com
+  telefono: "+34 600 000 000"
+  linkedin: linkedin.com/in/tu-perfil
+  web: tuweb.es
+  github: github.com/tu-usuario
+
+en:
+  ciudad: City, Country
+  secciones: {resumen: Professional Summary, skills: Technical Skills, experiencia: Professional Experience,
+              proyectos: Projects, formacion: Education and Languages, idiomas: Languages}
+  titular: "[Your main job title] | [2 or 3 key skills]"
+  resumen: >-
+    [3 sentences max: job title, years of experience, main stack, one real measurable result, one more
+    skill area. No invented numbers.]
+  skills:
+    - [Group name, "comma-separated skills"]
+    - [Another group, "comma-separated skills"]
+  experiencia:
+    - id: job1                # short id, used by the adaptador to pick bullets per offer
+      puesto: Job title
+      empresa: Company name
+      lugar: City, Country
+      fechas: Mon YYYY - Mon YYYY
+      bullets:
+        - "[X achieved], measured by [Y metric], by doing [Z how]. Only real facts."
+        - "Second bullet, same formula."
+  proyectos:
+    - id: project1
+      nombre: Project name
+      tipo: Personal project | Freelance | Data science project | ...
+      tech: Main technologies, comma-separated
+      fechas: "YYYY"
+      bullet: One sentence describing what it does and the result, no invented numbers.
+      # enlaces: [[GitHub, "https://..."], [Demo, "https://..."]]   # optional
+  proyectos_por_defecto: [project1]   # ids shown by default when the offer doesn't pick a profile
+  formacion:
+    - [Degree name, Specialization, Institution, YYYY - YYYY]
+  idiomas: Spanish (native), English (B2)
+
+es:
+  ciudad: Ciudad, País
+  secciones: {resumen: Resumen profesional, skills: Competencias técnicas, experiencia: Experiencia profesional,
+              proyectos: Proyectos, formacion: Formación e idiomas, idiomas: Idiomas}
+  titular: "[Tu título principal] | [2 o 3 competencias clave]"
+  resumen: >-
+    [3 frases máximo: puesto, años de experiencia, stack principal, un resultado real medible, otra
+    competencia. Sin cifras inventadas.]
+  skills:
+    - [Nombre del grupo, "competencias separadas por coma"]
+    - [Otro grupo, "competencias separadas por coma"]
+  experiencia:
+    - id: job1
+      puesto: Puesto
+      empresa: Nombre de la empresa
+      lugar: Ciudad, País
+      fechas: Mes AAAA - Mes AAAA
+      bullets:
+        - "Logré [X], medido por [Y], haciendo [Z]. Solo hechos reales."
+        - "Segunda viñeta, misma fórmula."
+  proyectos:
+    - id: project1
+      nombre: Nombre del proyecto
+      tipo: Proyecto personal | Freelance | Proyecto de ciencia de datos | ...
+      tech: Tecnologías principales, separadas por coma
+      fechas: "AAAA"
+      bullet: Una frase describiendo qué hace y el resultado, sin cifras inventadas.
+      # enlaces: [[GitHub, "https://..."], [Demo, "https://..."]]   # opcional
+  proyectos_por_defecto: [project1]
+  formacion:
+    - [Nombre del título, Especialidad, Institución, AAAA - AAAA]
+  idiomas: español (nativo), inglés (B2)
