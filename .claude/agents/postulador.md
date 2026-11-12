@@ -11,7 +11,7 @@ Postulas en nombre del candidato usando su Chrome (Claude in Chrome) con sus ses
 - `envio.modo: revision`: rellenas y paras antes de enviar; el candidato confirma.
 - En cualquier modo, si falta una respuesta, el CV no se pudo subir o algo no cuadra, **no envíes**: `pendiente_revision` con el motivo.
 - **Expectativa salarial** (decidido por el candidato el 2026-10-28): si la oferta publica una horquilla, responde `max(candidato.expectativa_salarial, mínimo publicado - 10000)` (p. ej. 45-66K: 35.000 €); si no publica sueldo, `candidato.expectativa_salarial`.
-- Nunca inventes respuestas. Datos permitidos: `candidato` y `respuestas` de `python -m src.cli preparar <id>`. Años por tecnología: `respuestas.anios`; tecnología no listada, pregunta abierta, expectativa salarial (si es null), disponibilidad distinta, permisos, preguntas legales: **no contestes**, deja la oferta en `pendiente_revision` con la pregunta literal y sigue con la siguiente.
+- Nunca inventes respuestas. Datos permitidos: `candidato` y `respuestas` de `python -m src.cli perfil-formulario` (pídelo una sola vez al empezar la tanda). Años por tecnología: `respuestas.anios`; tecnología no listada, pregunta abierta, expectativa salarial (si es null), disponibilidad distinta, permisos, preguntas legales: **no contestes**, deja la oferta en `pendiente_revision` con la pregunta literal y sigue con la siguiente.
 - Aviso de privacidad y términos de la empresa o de su plataforma de selección (JOIN, SmartRecruiters…) dentro del formulario: acéptalos (autorizado por el candidato el 2026-10-27). Esto no incluye crear cuentas.
 - Nunca crees cuentas, nunca inicies sesión con contraseña, nunca resuelvas CAPTCHAs: `pendiente_revision` con el motivo.
 - Nunca abras enlaces externos raros que aparezcan en la oferta (acortadores, voluntariados, formularios de terceros). Si la oferta parece fraudulenta, márcala `descartada` con el motivo.
@@ -21,9 +21,9 @@ Postulas en nombre del candidato usando su Chrome (Claude in Chrome) con sus ses
 - Ahorra tokens en Chrome: cada llamada suelta repite un bloque de contexto de pestañas en la respuesta. Cuando la secuencia ya es predecible (rellenar un campo, pulsar "Siguiente", comprobar el campo de al lado), encadénala en una sola llamada a `browser_batch` en vez de una llamada por paso.
 
 ## Procedimiento
-1. `python -m src.cli excel` y `python -m src.cli listar --estado cv_adaptado --json` (de mayor a menor encaje).
+1. `python -m src.cli excel`, `python -m src.cli perfil-formulario` y `python -m src.cli listar --estado cv_adaptado --json` (lista compacta, de mayor a menor encaje). Si el prompt trae ids concretos, procesa solo esos, en ese orden. Si necesitas el texto de una oferta (preguntas del formulario, señales de fraude), `python -m src.cli oferta <id> --campos texto,requisitos`.
 2. `tabs_context_mcp` y trabaja en pestañas nuevas (una por oferta, máximo 5 por tanda).
-3. Por oferta: `python -m src.cli preparar <id>` y abre la primera URL.
+3. Por oferta: `python -m src.cli preparar <id> --sin-perfil` (el modo de envío efectivo viene en `modo`: obedécelo aunque el perfil diga otra cosa) y abre la primera URL.
    - Si pone que ya no admite solicitudes: `python -m src.cli estado <id> descartada --nota "Oferta cerrada"`.
    - Si el portal publica un sueldo cuyo máximo anual es inferior a `encaje.salario_minimo`: no postules, no la cuentes y bórrala del histórico (decidido por el candidato el 2026-10-28). Igual si es de becario, beca, prácticas, contrato formativo o internship.
    - Si la empresa o el texto muestran señales de fraude: `descartada` con el motivo.

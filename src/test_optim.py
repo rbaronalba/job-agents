@@ -73,8 +73,49 @@ def paso0():
     return base
 
 
+def paso1(base: Path):
+    from .cli import CAMPOS_LISTA
+    from .cv import nombre_pdf
+    bases = [base] + ([COPIA] if COPIA.exists() else [])
+    for b in bases:
+        h = json.loads(cli("huella", base=b))
+        for estado in ("nueva", "cv_adaptado", "pendiente_revision", "enviada", "descartada"):
+            compacto = cli("listar", "--estado", estado, "--json", base=b)
+            completo = cli("listar", "--estado", estado, "--json", "--completo", base=b)
+            c, f = json.loads(compacto), json.loads(completo)
+            assert [o["id"] for o in c] == [o["id"] for o in f], f"{b.name} {estado}: ids u orden distintos"
+            assert all(list(o) == CAMPOS_LISTA for o in c)
+            if b == COPIA and f:
+                print(f"  {estado:18} {len(f):3} ofertas: --completo {len(completo.encode()):7} B -> compacto {len(compacto.encode()):6} B "
+                      f"({100 - 100 * len(compacto.encode()) // len(completo.encode())}% menos)")
+        if b == COPIA:
+            oid = json.loads(cli("listar", "--estado", "cv_adaptado", "--json", base=b))[0]["id"]
+            o = json.loads(cli("oferta", oid, base=b))
+            assert o["id"] == oid and "texto" in o and isinstance(o["urls"], list), list(o)
+            print(f"  oferta {oid}: {len(cli('oferta', oid, base=b).encode())} B")
+        assert json.loads(cli("huella", base=b)) == h, f"{b.name}: la huella cambió"
+    cli("oferta", "no-existe", base=base, ok=False)
+    oid1 = json.loads(cli("listar", "--json", base=base))[0]["id"]
+    assert list(json.loads(cli("oferta", oid1, "--campos", "titulo,texto", base=base))) == ["id", "titulo", "texto"]
+    # preparar con y sin perfil (en prueba: CV falso en data/tmp/prueba/output, nada fuera)
+    con = db.conectar(base)
+    oid, sem = con.execute("SELECT id, semana FROM ofertas WHERE estado = 'cv_adaptado'").fetchone()
+    con.close()
+    carpeta = db.RAIZ / "data" / "tmp" / "prueba" / "output" / sem / oid
+    carpeta.mkdir(parents=True, exist_ok=True)
+    (carpeta / nombre_pdf()).write_bytes(b"%PDF-1.4 prueba")
+    con_perfil = json.loads(cli("preparar", oid, prueba=True, base=base))
+    sin_perfil = json.loads(cli("preparar", oid, "--sin-perfil", prueba=True, base=base))
+    assert "candidato" in con_perfil and "respuestas" in con_perfil and con_perfil["modo"] == "revision"
+    assert "candidato" not in sin_perfil and sin_perfil["modo"] == "revision" and "prueba" in sin_perfil["cv"]
+    assert {k: v for k, v in con_perfil.items() if k not in ("candidato", "respuestas")} == sin_perfil
+    pf = json.loads(cli("perfil-formulario", prueba=True, base=base))
+    assert set(pf) == {"candidato", "respuestas", "modo"} and pf["modo"] == "revision"
+    print("paso 1 OK")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     shutil.rmtree(db.RAIZ / "data" / "tmp" / "prueba", ignore_errors=True)
-    paso0()
+    paso1(paso0())

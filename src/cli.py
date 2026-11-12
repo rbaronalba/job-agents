@@ -2,10 +2,12 @@
 
   filtrar     De una lista de ofertas candidatas (JSON), devuelve solo las no vistas ni ya postuladas
   guardar     Guarda o fusiona ofertas (JSON) en el histórico
-  listar      Lista ofertas por estado
+  listar      Lista ofertas por estado (--json compacto; --json --completo con todas las columnas)
+  oferta      Detalle completo de una oferta (o --campos concretos)
   estado      Cambia el estado de una oferta
   cv          Genera el CV adaptado de una oferta y lo verifica
-  preparar    Deja el CV de una oferta listo para subir y muestra los datos del formulario
+  preparar    Deja el CV de una oferta listo para subir y muestra los datos del formulario (--sin-perfil)
+  perfil-formulario  Candidato y respuestas fijas para formularios (una vez por sesión)
   enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
@@ -109,6 +111,25 @@ def cmd_guardar(args):
     print(json.dumps(res, ensure_ascii=False, indent=1))
 
 
+CAMPOS_LISTA = ["id", "encaje", "estado", "empresa", "titulo", "portales", "tipo_candidatura", "fecha_pub"]
+
+
+def cmd_oferta(args):
+    con = db.conectar()
+    o = con.execute("SELECT * FROM ofertas WHERE id = ?", (args.id,)).fetchone()
+    if not o:
+        raise SystemExit(f"No existe la oferta {args.id}")
+    o = dict(o)
+    for k in ("portales", "urls", "ids_externos", "requisitos"):
+        try:
+            o[k] = json.loads(o[k]) if o[k] else o[k]
+        except ValueError:
+            pass   # requisitos puede ser texto plano en ofertas antiguas
+    if args.campos:
+        o = {k: o.get(k) for k in ["id", *args.campos.split(",")]}
+    print(json.dumps(o, ensure_ascii=False, indent=1))
+
+
 def cmd_listar(args):
     con = db.conectar()
     sql, params = "SELECT * FROM ofertas WHERE 1=1", []
@@ -119,8 +140,13 @@ def cmd_listar(args):
     if args.min_encaje is not None:
         sql += " AND encaje >= ?"; params.append(args.min_encaje)
     filas = [dict(r) for r in con.execute(sql + " ORDER BY encaje DESC", params)]
-    if args.json:
+    if args.json and args.completo:
         print(json.dumps(filas, ensure_ascii=False, indent=1))
+        return
+    if args.json:
+        # Compacto: lo justo para elegir y ordenar. El detalle de una oferta, con `oferta <id>`.
+        print("[\n" + ",\n".join(json.dumps({k: json.loads(f[k]) if k == "portales" else f[k] for k in CAMPOS_LISTA},
+                                            ensure_ascii=False) for f in filas) + "\n]")
         return
     for f in filas:
         print(f"{f['id']}  {f['encaje'] or '-':>3}  {f['estado']:<18} {f['empresa']} | {f['titulo']} | {f['ubicacion'] or ''}")
@@ -189,12 +215,21 @@ def cmd_preparar(args):
     shutil.copy2(cv_pdf, subir / cv_pdf.name)
     carta = origen / "carta.txt"
     p = perfil()
-    print(json.dumps({
+    datos = {
         "id": o["id"], "empresa": o["empresa"], "titulo": o["titulo"], "portales": json.loads(o["portales"]),
         "urls": json.loads(o["urls"]), "tipo_candidatura": o["tipo_candidatura"],
         "cv": str(subir / cv_pdf.name), "carta": carta.read_text(encoding="utf-8") if carta.exists() else None,
-        "candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": modos(p)["portales"],
-    }, ensure_ascii=False, indent=1))
+        "modo": modos(p)["portales"],
+    }
+    if not args.sin_perfil:   # con --sin-perfil, candidato y respuestas se piden una vez con `perfil-formulario`
+        datos.update(candidato=p["candidato"], respuestas=p.get("respuestas", {}))
+    print(json.dumps(datos, ensure_ascii=False, indent=1))
+
+
+def cmd_perfil_formulario(args):
+    p = perfil()
+    print(json.dumps({"candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": modos(p)["portales"]},
+                     ensure_ascii=False, indent=1))
 
 
 def registrar_en_seguimiento(o, origen: str) -> str:
@@ -282,8 +317,14 @@ def main(argv=None):
     s.add_argument("--estado", choices=db.ESTADOS)
     s.add_argument("--semana")
     s.add_argument("--min-encaje", type=int)
-    s.add_argument("--json", action="store_true")
+    s.add_argument("--json", action="store_true", help="JSON compacto (id, encaje, empresa, título, portales...)")
+    s.add_argument("--completo", action="store_true", help="Con --json, todas las columnas (texto incluido)")
     s.set_defaults(fn=cmd_listar)
+
+    s = sub.add_parser("oferta", help="Detalle completo de una oferta")
+    s.add_argument("id")
+    s.add_argument("--campos", help="Solo estos campos, separados por comas (p. ej. titulo,texto,requisitos)")
+    s.set_defaults(fn=cmd_oferta)
 
     s = sub.add_parser("estado")
     s.add_argument("id"); s.add_argument("estado", choices=db.ESTADOS); s.add_argument("--nota")
@@ -296,7 +337,11 @@ def main(argv=None):
 
     s = sub.add_parser("preparar", help="Copia el CV a output/SUBIR/<id>/ y muestra datos para postular")
     s.add_argument("id")
+    s.add_argument("--sin-perfil", action="store_true", help="Sin candidato/respuestas (pídelos una vez con perfil-formulario)")
     s.set_defaults(fn=cmd_preparar)
+
+    s = sub.add_parser("perfil-formulario", help="Datos del candidato y respuestas fijas para formularios (una vez por sesión)")
+    s.set_defaults(fn=cmd_perfil_formulario)
 
     s = sub.add_parser("enviada", help="Marca enviada y la registra en candidaturas-sync si hace falta")
     s.add_argument("id")
