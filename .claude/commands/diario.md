@@ -2,6 +2,8 @@
 description: Ejecución diaria completa (buscar, adaptar, postular y espontáneas). Pensado para claude -p --chrome desde el Programador de tareas.
 ---
 
+(Para la ejecución desatendida existe también `python -m src.diario`, que hace lo mismo con una sesión de Claude por fase y salta las fases sin trabajo; este comando sigue siendo la versión en una sola sesión.)
+
 Ejecuta en orden, sin pedirme confirmación (envio.modo y espontaneas_modo están en auto, autorizado por mí). Si un paso falla, anótalo y sigue con el siguiente.
 
 1. Lanza el subagente `buscador` (búsqueda completa según config/profile.yaml).

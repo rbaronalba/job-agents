@@ -114,8 +114,129 @@ def paso1(base: Path):
     print("paso 1 OK")
 
 
+FALSO = '''import json, os, sys
+from pathlib import Path
+argv = sys.argv[1:]
+prompt = argv[argv.index("-p") + 1]
+with open(Path(__file__).with_name("llamadas.jsonl"), "a", encoding="utf-8") as f:
+    f.write(json.dumps({"argv": argv, "cwd": os.getcwd(), "prueba": os.environ.get("JOB_AGENTS_PRUEBA"),
+                        "db": os.environ.get("JOB_AGENTS_DB")}) + "\\n")
+modo = os.environ.get("FALSO_MODO", "ok")
+fase = prompt.split()[0]
+if modo == "limite" and fase == "/buscar":
+    texto = "You've hit your limit · resets 2:40pm"
+elif modo == "sin_chrome" and fase == "/postular":
+    texto = "Chrome no conectado. ESTADO_FASE: sin_chrome"
+else:
+    texto = f"hecho {fase}\\nESTADO_FASE: ok"
+print(json.dumps({"result": texto, "is_error": False, "session_id": "falsa", "num_turns": 1, "total_cost_usd": 0}))
+'''
+
+
+def claude_falso() -> Path:
+    d = Path(tempfile.mkdtemp())
+    (d / "falso.py").write_text(FALSO, encoding="utf-8")
+    (d / "claude.cmd").write_text(f'@"{sys.executable}" "%~dp0falso.py" %*\r\n', encoding="utf-8")
+    return d
+
+
+def diario(falso: Path, *args, modo="ok", env_extra=None) -> tuple[str, list[dict]]:
+    (falso / "llamadas.jsonl").unlink(missing_ok=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("JOB_AGENTS_")}
+    env.update(PATH=f"{falso}{os.pathsep}{env['PATH']}", FALSO_MODO=modo, PYTHONIOENCODING="utf-8", **(env_extra or {}))
+    r = subprocess.run([sys.executable, "-m", "src.diario", *args], cwd=db.RAIZ, env=env,
+                       capture_output=True, text=True, encoding="utf-8")
+    llamadas = [json.loads(l) for l in (falso / "llamadas.jsonl").read_text(encoding="utf-8").splitlines()] \
+        if (falso / "llamadas.jsonl").exists() else []
+    return r.stdout + r.stderr, llamadas
+
+
+def paso2(base: Path):
+    from .diario import _seguro
+    hoy = __import__("datetime").date.today().isoformat()
+    # pendientes: cupos con una enviada hoy por portal y dos espontáneas hoy (perfil de ejemplo: 30 total, 15 portales,
+    # objetivo 12 espontáneas)
+    con = db.conectar(base)
+    nuevas = [r[0] for r in con.execute("SELECT id FROM ofertas WHERE estado = 'nueva' ORDER BY encaje DESC")]
+    cv = [r[0] for r in con.execute("SELECT id FROM ofertas WHERE estado = 'cv_adaptado' ORDER BY encaje DESC")]
+    env_id = con.execute("SELECT id FROM ofertas WHERE estado = 'enviada'").fetchone()[0]
+    db.cambiar_estado(con, env_id, "enviada")
+    con.commit(); con.close()
+    csv = db.RAIZ / "data" / "tmp" / "prueba" / "empresas.csv"
+    csv.parent.mkdir(parents=True, exist_ok=True)
+    csv.write_text(f"empresa,web,email,ciudad,sector,notas,estado,fecha\nX,,,,,,enviada,{hoy}\nY,,,,,,borrador,{hoy}\n"
+                   "Z,,,,,,enviada,2020-01-01\nW,,,,,,pendiente,\n", encoding="utf-8")
+    p = json.loads(cli("pendientes", prueba=True, base=base))
+    assert p["nuevas"] == nuevas and p["cv_adaptado"] == cv, p
+    assert len(p["enviadas_hoy"]) == 1 and p["espontaneas_hoy"] == ["X", "Y"], p
+    assert p["cupo_portales"] == 14 and p["cupo_espontaneas"] == 10 and p["prueba"], p
+    if COPIA.exists():
+        pc = json.loads(cli("pendientes", base=COPIA))
+        print(f"  copia del histórico: {len(pc['nuevas'])} nuevas, {len(pc['cv_adaptado'])} cv_adaptado, "
+              f"{len(pc['enviadas_hoy'])} enviadas hoy, cupo portales {pc['cupo_portales']}")
+    for malo in ('a"b', "a&b", "a|b", "a\nb", "50%"):
+        try:
+            _seguro(malo)
+            raise AssertionError(malo)
+        except ValueError:
+            pass
+
+    falso = claude_falso()
+    h_base = json.loads(cli("huella", base=base))
+    # A) día completo en prueba: 4 sesiones (buscar, adaptar, 1 lote de postular, espontáneas); sin email ni seguimiento
+    out, ll = diario(falso, "--prueba", "--origen-db", str(base))
+    fases = [l["argv"][1].split()[0] for l in ll]
+    assert fases == ["/buscar", "/adaptar", "/postular", "/espontaneas"], (fases, out)
+    assert ll[2]["argv"][1].startswith("/postular " + " ".join(cv)), ll[2]["argv"][1]
+    assert ll[3]["argv"][1].startswith("/espontaneas 10"), ll[3]["argv"][1]   # objetivo 12 menos 2 de hoy
+    assert all(("--chrome" in l["argv"]) == (f in ("/postular", "/espontaneas")) for l, f in zip(ll, fases))
+    assert all(l["prueba"] == "1" and "prueba" in l["db"] and Path(l["db"]) != base for l in ll), ll
+    assert all("MODO PRUEBA" in l["argv"][1] and "ESTADO_FASE" in l["argv"][1] for l in ll)
+    assert "seguimiento  vacia" in out and "email de resumen no enviado" in out, out
+    assert json.loads(cli("huella", base=base)) == h_base, "la base de origen cambió en --prueba"
+    # B) lotes de 1 y tope de ofertas
+    _, ll = diario(falso, "--prueba", "--origen-db", str(base), "--lote", "1", "--fases", "postular")
+    assert [l["argv"][1].split()[:2] for l in ll] == [["/postular", cv[0]], ["/postular", cv[1]]], ll
+    _, ll = diario(falso, "--prueba", "--origen-db", str(base), "--max-ofertas", "1", "--fases", "postular,espontaneas")
+    assert [l["argv"][1].split()[:2] for l in ll] == [["/postular", cv[0]], ["/espontaneas", "1"]], ll
+    # C) sin Chrome: no se intenta espontáneas
+    out, ll = diario(falso, "--prueba", "--origen-db", str(base), "--fases", "postular,espontaneas", modo="sin_chrome")
+    assert [l["argv"][1].split()[0] for l in ll] == ["/postular"] and "Chrome no disponible" in out, out
+    # D) límite de uso en buscar: no se lanza nada más
+    out, ll = diario(falso, "--prueba", "--origen-db", str(base), modo="limite")
+    assert [l["argv"][1].split()[0] for l in ll] == ["/buscar"] and out.count("omitida") >= 4, out
+    # E) fases vacías: sin nuevas ni CVs ni cupo no arranca ninguna sesión
+    vacia = Path(tempfile.mkdtemp()) / "v.sqlite"
+    db.conectar(vacia).close()
+    out, ll = diario(falso, "--prueba", "--origen-db", str(vacia), "--fases", "adaptar,postular")
+    assert ll == [] and out.count("vacia") == 2, out
+    # F) modo real (sin prueba) sobre una base sintética: hay email final y se le pasa un archivo, no el texto
+    out, ll = diario(falso, "--fases", "postular,resumen", env_extra={"JOB_AGENTS_DB": str(base)})
+    assert [l["argv"][1].split()[0] for l in ll] == ["/postular", "Lee"] and "email_resumen.md" in ll[-1]["argv"][1], ll
+    assert all(l["prueba"] is None for l in ll)
+    # G) simular no lanza Claude
+    out, ll = diario(falso, "--prueba", "--simular", "--origen-db", str(base))
+    assert ll == [] and "simulado" in out, out
+    # H) diario.bat: sin la variable, la línea de siempre (/diario); con JOB_AGENTS_DIARIO=nuevo, src.diario
+    for var, esperado in ((None, ["/diario"]), ("nuevo", [])):
+        (falso / "llamadas.jsonl").unlink(missing_ok=True)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("JOB_AGENTS_")}
+        env.update(PATH=f"{falso}{os.pathsep}{env['PATH']}", PYTHONIOENCODING="utf-8")
+        if var:
+            env["JOB_AGENTS_DIARIO"] = var
+        subprocess.run(["cmd", "/c", str(db.RAIZ / "diario.bat"), "--prueba", "--simular", "--origen-db", str(base)],
+                       cwd=db.RAIZ, env=env, capture_output=True)
+        ll = [json.loads(l) for l in (falso / "llamadas.jsonl").read_text(encoding="utf-8").splitlines()] \
+            if (falso / "llamadas.jsonl").exists() else []
+        assert [l["argv"][1] for l in ll] == esperado, (var, ll)
+    assert "simulado" in (db.RAIZ / "logs" / "diario.log").read_text(encoding="utf-8")
+    print("paso 2 OK")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     shutil.rmtree(db.RAIZ / "data" / "tmp" / "prueba", ignore_errors=True)
-    paso1(paso0())
+    base = paso0()
+    paso1(base)
+    paso2(base)

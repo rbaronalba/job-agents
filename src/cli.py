@@ -11,6 +11,7 @@
   enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
+  pendientes  Ofertas nuevas, CVs por enviar, envíos de hoy y cupos restantes (JSON)
   modo        Modos de envío efectivos (JOB_AGENTS_PRUEBA=1 fuerza revision/borrador) y rutas activas
   huella      Huella de solo lectura del histórico para comprobar que no se pierde ni cambia nada
 
@@ -294,6 +295,44 @@ def cmd_resumen(args):
         f.write(texto + "\n\n")
 
 
+def espontaneas_hoy(hoy: str) -> list[str]:
+    """Empresas del CSV de espontáneas con borrador o envío hoy (misma regla que espontaneas.md)."""
+    import csv
+    if not db.EMPRESAS.exists():
+        return []
+    with open(db.EMPRESAS, encoding="utf-8", newline="") as f:
+        return [r.get("empresa") or "" for r in csv.DictReader(f)
+                if (r.get("fecha") or "").startswith(hoy) and r.get("estado") in ("enviada", "borrador")]
+
+
+def pendientes(con=None, p: dict | None = None) -> dict:
+    """Qué trabajo queda hoy, para que el orquestador no lance fases vacías. Solo lectura."""
+    con = con or db.conectar()
+    envio = (p or perfil()).get("envio", {})
+    hoy = date.today().isoformat()
+    ids = lambda estado: [r[0] for r in con.execute(
+        "SELECT id FROM ofertas WHERE estado = ? ORDER BY encaje DESC", (estado,))]
+    enviadas = [f"{e} | {t}" for e, t in con.execute("SELECT empresa, titulo FROM ofertas WHERE enviada = ?", (hoy,))]
+    esp = espontaneas_hoy(hoy)
+    total = envio.get("max_diario_total", 30)
+    queda_total = total - len(enviadas) - len(esp)
+    return {
+        "nuevas": ids("nueva"),
+        "cv_adaptado": ids("cv_adaptado"),
+        "enviadas_hoy": enviadas,
+        "espontaneas_hoy": esp,
+        "cupo_portales": max(0, min(envio.get("max_diario_portales", 15) - len(enviadas), queda_total)),
+        "cupo_espontaneas": max(0, min(envio.get("espontaneas_objetivo_diario", 12), envio.get("espontaneas_max_diario", 15),
+                                       total - len(enviadas)) - len(esp)),
+        "candidaturas_sync": (p or perfil()).get("candidaturas_sync"),
+        "prueba": db.PRUEBA,
+    }
+
+
+def cmd_pendientes(args):
+    print(json.dumps(pendientes(), ensure_ascii=False, indent=1))
+
+
 def cmd_modo(args):
     m = modos()
     print(json.dumps({**m, "db": str(db.RUTA), "empresas_csv": str(db.EMPRESAS), "output": str(db.OUTPUT)}, ensure_ascii=False))
@@ -354,6 +393,8 @@ def main(argv=None):
 
     s = sub.add_parser("resumen"); s.add_argument("--errores"); s.set_defaults(fn=cmd_resumen)
 
+    s = sub.add_parser("pendientes", help="Trabajo pendiente hoy y cupos (lo usa src.diario para saltar fases vacías)")
+    s.set_defaults(fn=cmd_pendientes)
     s = sub.add_parser("modo", help="Modos de envío efectivos y rutas (en JOB_AGENTS_PRUEBA=1: revision/borrador)")
     s.set_defaults(fn=cmd_modo)
     s = sub.add_parser("huella", help="Huella de solo lectura del histórico (integridad, conteos, hash)")
