@@ -200,8 +200,13 @@ class Diario:
             return self.registrar("seguimiento", "vacia", "candidaturas_sync no configurado")
         if self.a.prueba:
             return self.registrar("seguimiento", "omitida", "modo prueba: no se toca candidaturas.xlsx")
-        self.claude("seguimiento", "Lee .claude/commands/revisar.md y sigue su procedimiento en modo sin Google Cloud "
-                    "con el conector de Gmail, ejecutando sus comandos desde esta carpeta.", cwd=(db.RAIZ / carpeta).resolve())
+        # Desde la raíz del proyecto (no desde la carpeta de candidaturas-sync): solo aquí existe el subagente correo,
+        # único con Gmail en claude -p
+        c = Path(carpeta).as_posix()
+        self.claude("seguimiento", f"Sigue el procedimiento de {c}/.claude/commands/revisar.md en modo sin Google Cloud "
+                    f"(lee antes {c}/CLAUDE.md). Ejecuta sus comandos python -m candidaturas desde esa carpeta "
+                    f"(cd {c} y despues el comando). Toda operacion de Gmail (buscar o leer hilos) pidesela al subagente "
+                    "correo con la consulta exacta y los campos que necesites: tu no tienes Gmail.")
 
     def resumen(self):
         if "resumen" not in self.a.fases:
@@ -225,7 +230,7 @@ class Diario:
         datos = self.dir_logs / "email_resumen.md"
         datos.write_text("\n".join([
             f"Asunto: job-agents | resumen {date.today().isoformat()}",
-            "Destinatario: candidato.email de config/profile.yaml (solo esa dirección).",
+            "Destinatario: el candidato. Lo fija el subagente correo (candidato.email): no lo busques tú.",
             "Cuerpo en texto plano, 15 líneas como máximo: ofertas nuevas, candidaturas enviadas (empresa y puesto), "
             "espontáneas enviadas (empresa), respuestas recibidas de empresas, pendientes que necesitan al candidato "
             "(pregunta o motivo) y errores.", "", "## Resumen", texto,
@@ -233,7 +238,8 @@ class Diario:
             "## Resultado de cada fase", *(f"- {f['fase']} ({f['estado']}): {f.get('texto', f['detalle'])[-800:]}" for f in self.fases),
         ]), encoding="utf-8")
         ruta = _seguro(datos.relative_to(db.RAIZ).as_posix())
-        self.claude("email", f"Lee {ruta} y envia ese resumen con send_message de Gmail tal y como indica.")
+        self.claude("email", f"Lee {ruta}, redacta el correo tal y como indica y pide al subagente correo que lo envie "
+                    "(operacion enviar, resumen diario): tu no tienes Gmail.")
 
     def ejecutar(self) -> int:
         for fase in (self.buscar, self.adaptar, self.postular, self.espontaneas, self.seguimiento, self.resumen):

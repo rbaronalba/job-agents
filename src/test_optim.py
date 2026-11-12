@@ -329,6 +329,43 @@ def d3_seguridad(base: Path):
     print("D3 seguridad OK (simulada)")
 
 
+def d1_correo(base: Path):
+    import re as _re
+    from argparse import Namespace
+    from .diario import Diario
+    agentes = db.RAIZ / ".claude" / "agents"
+    correo = (agentes / "correo.md").read_text(encoding="utf-8")
+    herramientas = set(_re.search(r"(?m)^tools: (.*)$", correo).group(1).split(", "))
+    necesarias = {f"mcp__claude_ai_Gmail__{h}" for h in ("search_threads", "get_thread", "get_message", "list_drafts",
+                                                         "get_draft", "create_draft", "send_message", "list_labels",
+                                                         "create_label", "label_message")}
+    assert necesarias <= herramientas and "Bash" in herramientas, necesarias - herramientas
+    assert "src.cli modo" in correo and "prueba" in correo
+    # Nadie más usa Gmail directamente salvo el buscador (subagente: no puede delegar en otro subagente)
+    for md in agentes.glob("*.md"):
+        if md.name not in ("correo.md", "buscador.md"):
+            t = md.read_text(encoding="utf-8")
+            assert not _re.search(r"mcp__claude_ai_Gmail|search_threads|create_draft|send_message|list_drafts|label_message", t), md.name
+    assert "`correo`" in (agentes / "espontaneas.md").read_text(encoding="utf-8")
+    # Seguimiento y email delegan en correo; el seguimiento se lanza desde la raíz (donde existe el agente)
+    falso = claude_falso()
+    (falso / "llamadas.jsonl").unlink(missing_ok=True)
+    path, os.environ["PATH"] = os.environ["PATH"], f"{falso}{os.pathsep}{os.environ['PATH']}"
+    try:
+        d = Diario(Namespace(prueba=False, simular=False, timeout=60, fases=["seguimiento"], origen_db=base,
+                             lote=1, max_ofertas=None))
+        d.pendientes = lambda: {"candidaturas_sync": "candidaturas-sync"}
+        d.seguimiento()
+    finally:
+        os.environ["PATH"] = path
+    ll = [json.loads(l) for l in (falso / "llamadas.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(ll) == 1 and Path(ll[0]["cwd"]).resolve() == db.RAIZ.resolve(), ll
+    assert "candidaturas-sync/.claude/commands/revisar.md" in ll[0]["argv"][1] and "subagente correo" in ll[0]["argv"][1]
+    _, ll = diario(falso, "--fases", "resumen", env_extra={"JOB_AGENTS_DB": str(base)})
+    assert len(ll) == 1 and "subagente correo" in ll[0]["argv"][1] and "email_resumen.md" in ll[0]["argv"][1], ll
+    print("D1 correo OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -339,3 +376,4 @@ if __name__ == "__main__":
     d4_stdin(base)
     d5_errores(base)
     d3_seguridad(base)
+    d1_correo(base)
