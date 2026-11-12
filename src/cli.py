@@ -11,6 +11,7 @@
   enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
+  espontaneas-consulta  Solo lectura: CSV de espontáneas y coincidencias de una empresa en candidaturas.xlsx (JSON)
   pendientes  Ofertas nuevas, CVs por enviar, envíos de hoy y cupos restantes (JSON)
   modo        Modos de envío efectivos (JOB_AGENTS_PRUEBA=1 fuerza revision/borrador) y rutas activas
   huella      Huella de solo lectura del histórico para comprobar que no se pierde ni cambia nada
@@ -60,11 +61,11 @@ def leer_json(ruta: str):
     return datos if isinstance(datos, list) else [datos]
 
 
-def ya_postuladas() -> tuple[set[str], set[str]]:
-    """Claves empresa|puesto e ids de LinkedIn del Excel de candidaturas-sync."""
+def ruta_candidaturas() -> Path | None:
+    """Ruta del Excel de candidaturas-sync (según su config.toml), o None si candidaturas_sync no está configurado."""
     carpeta = perfil().get("candidaturas_sync")
     if not carpeta:
-        return set(), set()
+        return None
     raiz = (RAIZ / carpeta).resolve()
     excel = raiz / "candidaturas.xlsx"
     cfg = raiz / "config.toml"
@@ -72,6 +73,14 @@ def ya_postuladas() -> tuple[set[str], set[str]]:
         import tomllib
         ruta = Path(tomllib.loads(cfg.read_text(encoding="utf-8")).get("excel", "candidaturas.xlsx")).expanduser()
         excel = ruta if ruta.is_absolute() else raiz / ruta
+    return excel
+
+
+def ya_postuladas() -> tuple[set[str], set[str]]:
+    """Claves empresa|puesto e ids de LinkedIn del Excel de candidaturas-sync."""
+    excel = ruta_candidaturas()
+    if excel is None:
+        return set(), set()
     if not excel.exists():
         print(f"Aviso: no encuentro {excel}; no se comprueban candidaturas ya enviadas.", file=sys.stderr)
         return set(), set()
@@ -339,6 +348,78 @@ def cmd_pendientes(args):
     print(json.dumps(pendientes(), ensure_ascii=False, indent=1))
 
 
+def _fallo(mensaje: str):
+    """Error explícito: nunca se devuelve como cero resultados."""
+    print(json.dumps({"ok": False, "error": mensaje}, ensure_ascii=False, sort_keys=True))
+    raise SystemExit(2)
+
+
+def cmd_espontaneas_consulta(args):
+    """Solo lectura. CSV de espontáneas: filas, por estado y envíos de hoy. Con --empresa/--dominio, además, sus
+    coincidencias en la hoja Candidaturas de candidaturas.xlsx. Cualquier archivo ausente o ilegible es un error."""
+    import csv
+    from collections import Counter
+    hoy = date.today().isoformat()
+    ruta_csv = Path(args.csv) if args.csv else db.EMPRESAS
+    if not ruta_csv.is_file():
+        _fallo(f"no existe el CSV de empresas: {ruta_csv}")
+    try:
+        with open(ruta_csv, encoding="utf-8", newline="") as f:
+            lector = csv.DictReader(f)
+            faltan = {"empresa", "estado", "fecha"} - set(lector.fieldnames or [])
+            filas = list(lector)
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        _fallo(f"no se puede leer {ruta_csv}: {e}")
+    if faltan:
+        _fallo(f"al CSV {ruta_csv} le faltan columnas: {sorted(faltan)}")
+    de_hoy = Counter(r["estado"] for r in filas if (r.get("fecha") or "").startswith(hoy) and r.get("estado") in ("enviada", "borrador"))
+    salida = {"ok": True, "csv": {
+        "ruta": str(ruta_csv), "filas": len(filas),
+        "por_estado": dict(sorted(Counter((r.get("estado") or "") for r in filas).items())),
+        "hoy": {"enviada": de_hoy["enviada"], "borrador": de_hoy["borrador"], "total": sum(de_hoy.values())},
+    }}
+    if args.empresa or args.dominio:
+        salida["candidaturas"] = _candidaturas_de(args)
+    print(json.dumps(salida, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str))
+
+
+def _candidaturas_de(args) -> dict:
+    ruta = Path(args.excel) if args.excel else ruta_candidaturas()
+    if ruta is None:
+        return {"configurado": False}
+    if not ruta.is_file():
+        _fallo(f"no existe el Excel de candidaturas: {ruta}")
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(ruta, read_only=True, data_only=True)   # read_only: nunca se guarda
+    except Exception as e:   # noqa: BLE001 - archivo corrupto, bloqueado, no es xlsx...
+        _fallo(f"no se puede leer {ruta}: {type(e).__name__}: {e}")
+    try:
+        if "Candidaturas" not in wb.sheetnames:
+            _fallo(f"{ruta} no tiene la hoja Candidaturas")
+        filas = wb["Candidaturas"].iter_rows(values_only=True)
+        cab = [str(c or "") for c in next(filas, [])]
+        if "Empresa" not in cab:
+            _fallo(f"la hoja Candidaturas de {ruta} no tiene la columna Empresa")
+        col = {c: cab.index(c) for c in ("Fecha", "Empresa", "Puesto", "Enlace", "Fase", "Origen", "Notas") if c in cab}
+        emp = db.clave(args.empresa, "").split("|")[0] if args.empresa else ""
+        dom = (args.dominio or "").lower().removeprefix("www.").strip()
+        coincidencias, n = [], 0
+        for n, f in enumerate(filas, start=2):
+            celda = lambda c: f[col[c]] if c in col and col[c] < len(f) else None
+            otra = db.clave(str(celda("Empresa") or ""), "").split("|")[0]
+            # Nombre normalizado igual, o uno contenido en el otro si es suficientemente largo; dominio en cualquier celda
+            por_empresa = bool(emp and otra and (emp == otra or (min(len(emp), len(otra)) >= 4 and (emp in otra or otra in emp))))
+            por_dominio = bool(dom and any(dom in str(v).lower() for v in f if v))
+            if por_empresa or por_dominio:
+                coincidencias.append({"fila": n, "motivo": "empresa" if por_empresa else "dominio",
+                                      **{c.lower(): celda(c) for c in ("Fecha", "Empresa", "Puesto", "Fase", "Origen")}})
+    finally:
+        wb.close()
+    return {"configurado": True, "ruta": str(ruta), "filas": max(n - 1, 0), "contactada": bool(coincidencias),
+            "coincidencias": coincidencias}
+
+
 def cmd_modo(args):
     m = modos()
     print(json.dumps({**m, "db": str(db.RUTA), "empresas_csv": str(db.EMPRESAS), "output": str(db.OUTPUT)}, ensure_ascii=False))
@@ -401,6 +482,12 @@ def main(argv=None):
 
     s = sub.add_parser("pendientes", help="Trabajo pendiente hoy y cupos (lo usa src.diario para saltar fases vacías)")
     s.set_defaults(fn=cmd_pendientes)
+    s = sub.add_parser("espontaneas-consulta", help="Solo lectura: CSV de espontáneas (filas, envíos de hoy) y, con "
+                       "--empresa/--dominio, coincidencias en candidaturas.xlsx. Error explícito si falta o no se lee un archivo")
+    s.add_argument("--empresa"); s.add_argument("--dominio")
+    s.add_argument("--csv", help="Otro CSV (por defecto el de espontáneas activo)")
+    s.add_argument("--excel", help="Otro candidaturas.xlsx (por defecto el de candidaturas_sync)")
+    s.set_defaults(fn=cmd_espontaneas_consulta)
     s = sub.add_parser("modo", help="Modos de envío efectivos y rutas (en JOB_AGENTS_PRUEBA=1: revision/borrador)")
     s.set_defaults(fn=cmd_modo)
     s = sub.add_parser("huella", help="Huella de solo lectura del histórico (integridad, conteos, hash)")

@@ -384,6 +384,72 @@ def estado_fase():
     print("ESTADO_FASE OK (simulada)")
 
 
+def _sello(*rutas: Path) -> list:
+    import hashlib
+    return [(p.name, hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns) for p in rutas]
+
+
+def consulta_lectura():
+    from datetime import date
+    from openpyxl import Workbook
+    d = Path(tempfile.mkdtemp())
+    xlsx, csv_, roto, sin_hoja, csv_malo = d / "candidaturas.xlsx", d / "empresas.csv", d / "roto.xlsx", d / "sin_hoja.xlsx", d / "malo.csv"
+    wb = Workbook(); ws = wb.active; ws.title = "Candidaturas"
+    ws.append(["Fecha", "Empresa", "Puesto", "Enlace", "Fase", "Días", "Origen", "Notas", "Ref"])
+    ws.append([date(2026, 10, 1), "Acme Software S.L.", "Frontend", "https://www.acme.es/empleo", "Enviada", 3, "Espontánea", None, None])
+    ws.append([date(2026, 10, 2), "Otra", "Angular", None, "Rechazado", 9, "LinkedIn", "contacto en rrhh@beta.io", "li:1"])
+    ws.append([None, None, None, None, None, None, None, None, None])
+    wb.save(xlsx)
+    wb = Workbook(); wb.active.title = "Hoja1"; wb.save(sin_hoja)
+    roto.write_text("esto no es un xlsx", encoding="utf-8")
+    hoy = date.today().isoformat()
+    csv_.write_text(f"empresa,web,email,ciudad,sector,notas,estado,fecha\nA,,,,,,enviada,{hoy}\nB,,,,,,borrador,{hoy}\n"
+                    f"C,,,,,,enviada,2020-01-01\nD,,,,,,pendiente,\nE,,,,,,,\n", encoding="utf-8")
+    csv_malo.write_text("nombre,correo\nX,y\n", encoding="utf-8")
+    antes = _sello(xlsx, csv_, roto, sin_hoja, csv_malo)
+
+    def q(*a, ok=True):
+        r = json.loads(cli("espontaneas-consulta", "--csv", str(csv_), *a, ok=ok).strip().splitlines()[-1])
+        assert r["ok"] is ok, r
+        return r
+
+    r = q()
+    assert r["csv"] == {"ruta": str(csv_), "filas": 5, "por_estado": {"": 1, "borrador": 1, "enviada": 2, "pendiente": 1},
+                        "hoy": {"enviada": 1, "borrador": 1, "total": 2}} and "candidaturas" not in r, r
+    c = q("--empresa", "ACME SOFTWARE", "--excel", str(xlsx))["candidaturas"]      # sin el S.L., en mayúsculas
+    assert c["contactada"] and [x["fila"] for x in c["coincidencias"]] == [2] and c["coincidencias"][0]["motivo"] == "empresa", c
+    assert c["filas"] == 3 and c["coincidencias"][0]["fecha"].startswith("2026-10-01"), c
+    c = q("--dominio", "www.beta.io", "--excel", str(xlsx))["candidaturas"]          # dominio en Notas
+    assert [x["fila"] for x in c["coincidencias"]] == [3] and c["coincidencias"][0]["motivo"] == "dominio", c
+    c = q("--empresa", "Gamma", "--dominio", "gamma.com", "--excel", str(xlsx))["candidaturas"]
+    assert c["contactada"] is False and c["coincidencias"] == [], c
+    c = q("--empresa", "Ac", "--excel", str(xlsx))["candidaturas"]                   # nombres cortos no coinciden por contención
+    assert c["coincidencias"] == [], c
+    # Sin candidaturas_sync configurado (perfil de ejemplo): se dice, no se inventa un cero
+    assert q("--empresa", "Acme")["candidaturas"] == {"configurado": False}
+    # Salida estable: misma entrada, misma línea; claves ordenadas, una sola línea
+    s1 = cli("espontaneas-consulta", "--csv", str(csv_), "--empresa", "Acme", "--excel", str(xlsx))
+    assert s1 == cli("espontaneas-consulta", "--csv", str(csv_), "--empresa", "Acme", "--excel", str(xlsx))
+    assert s1.count("\n") == 1 and s1.startswith('{"candidaturas":'), s1[:60]
+    # Errores explícitos (código 2, ok false, sin recuentos ni "contactada")
+    casos = [
+        (["--csv", str(d / "no.csv")], "no existe el CSV"),
+        (["--csv", str(csv_malo)], "le faltan columnas"),
+        (["--csv", str(csv_), "--empresa", "x", "--excel", str(d / "no.xlsx")], "no existe el Excel"),
+        (["--csv", str(csv_), "--empresa", "x", "--excel", str(roto)], "no se puede leer"),
+        (["--csv", str(csv_), "--empresa", "x", "--excel", str(sin_hoja)], "no tiene la hoja Candidaturas"),
+    ]
+    for args, texto in casos:
+        r = subprocess.run([sys.executable, "-m", "src.cli", "espontaneas-consulta", *args], cwd=db.RAIZ,
+                           capture_output=True, text=True, encoding="utf-8",
+                           env={**{k: v for k, v in os.environ.items() if not k.startswith("JOB_AGENTS_")}, "PYTHONIOENCODING": "utf-8"})
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert r.returncode == 2 and out["ok"] is False and texto in out["error"], (args, r.returncode, out)
+        assert set(out) == {"ok", "error"}, out   # ni csv, ni candidaturas, ni contactada: un error no es un cero
+    assert _sello(xlsx, csv_, roto, sin_hoja, csv_malo) == antes, "algún archivo cambió"
+    print("espontaneas-consulta OK: solo lectura (SHA-256 y mtime idénticos), errores explícitos")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -396,3 +462,4 @@ if __name__ == "__main__":
     d3_seguridad(base)
     d1_correo(base)
     estado_fase()
+    consulta_lectura()
