@@ -88,8 +88,9 @@ class Diario:
             return {"estado": "ok"}
         inicio = time.time()
         try:
-            r = subprocess.run(cmd, cwd=cwd or db.RAIZ, env=self.env, capture_output=True, text=True,
-                               encoding="utf-8", timeout=self.a.timeout)
+            # stdin cerrado: sin él, claude -p espera 3 s a datos por stdin en cada sesión
+            r = subprocess.run(cmd, cwd=cwd or db.RAIZ, env=self.env, stdin=subprocess.DEVNULL, capture_output=True,
+                               text=True, encoding="utf-8", timeout=self.a.timeout)
             salida = r.stdout
         except subprocess.TimeoutExpired:
             self.registrar(fase, "timeout", f"más de {self.a.timeout}s")

@@ -114,15 +114,27 @@ def paso1(base: Path):
     print("paso 1 OK")
 
 
-FALSO = '''import json, os, sys
+FALSO = '''import json, os, sys, threading
 from pathlib import Path
 argv = sys.argv[1:]
 prompt = argv[argv.index("-p") + 1]
+leido = {}
+hilo = threading.Thread(target=lambda: leido.setdefault("d", sys.stdin.read()), daemon=True)
+hilo.start(); hilo.join(2)
 with open(Path(__file__).with_name("llamadas.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps({"argv": argv, "cwd": os.getcwd(), "prueba": os.environ.get("JOB_AGENTS_PRUEBA"),
-                        "db": os.environ.get("JOB_AGENTS_DB")}) + "\\n")
+                        "db": os.environ.get("JOB_AGENTS_DB"),
+                        "stdin_cerrado": not hilo.is_alive() and leido.get("d") == ""}) + "\\n")
 modo = os.environ.get("FALSO_MODO", "ok")
 fase = prompt.split()[0]
+if modo == "max_turns":   # misma forma que la respuesta real de claude -p --max-turns 1 (validación del 12-nov)
+    print(json.dumps({"type": "result", "subtype": "error_max_turns", "is_error": True, "result": None, "num_turns": 2,
+                      "session_id": "falsa", "errors": ["Reached maximum number of turns (1)"]}))
+    sys.exit(1)
+if modo == "no_json":
+    print("salida rota")
+    print("fallo interno del CLI", file=sys.stderr)
+    sys.exit(3)
 if modo == "limite" and fase == "/buscar":
     texto = "You've hit your limit · resets 2:40pm"
 elif modo == "sin_chrome" and fase == "/postular":
@@ -140,15 +152,21 @@ def claude_falso() -> Path:
     return d
 
 
-def diario(falso: Path, *args, modo="ok", env_extra=None) -> tuple[str, list[dict]]:
+def diario(falso: Path, *args, modo="ok", env_extra=None, stdin_abierto=False) -> tuple[str, list[dict]]:
     (falso / "llamadas.jsonl").unlink(missing_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("JOB_AGENTS_")}
     env.update(PATH=f"{falso}{os.pathsep}{env['PATH']}", FALSO_MODO=modo, PYTHONIOENCODING="utf-8", **(env_extra or {}))
-    r = subprocess.run([sys.executable, "-m", "src.diario", *args], cwd=db.RAIZ, env=env,
-                       capture_output=True, text=True, encoding="utf-8")
+    # stdin_abierto: el orquestador hereda un stdin abierto y vacío (como en una consola o el Programador de tareas)
+    p = subprocess.Popen([sys.executable, "-m", "src.diario", *args], cwd=db.RAIZ, env=env,
+                         stdin=subprocess.PIPE if stdin_abierto else subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8")
+    salida = p.stdout.read()
+    p.wait()
+    if p.stdin:
+        p.stdin.close()
     llamadas = [json.loads(l) for l in (falso / "llamadas.jsonl").read_text(encoding="utf-8").splitlines()] \
         if (falso / "llamadas.jsonl").exists() else []
-    return r.stdout + r.stderr, llamadas
+    return salida, llamadas
 
 
 def paso2(base: Path):
@@ -233,6 +251,13 @@ def paso2(base: Path):
     print("paso 2 OK")
 
 
+def d4_stdin(base: Path):
+    falso = claude_falso()
+    _, ll = diario(falso, "--prueba", "--origen-db", str(base), "--fases", "buscar", stdin_abierto=True)
+    assert ll and all(l["stdin_cerrado"] for l in ll), ll
+    print("D4 stdin OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -240,3 +265,4 @@ if __name__ == "__main__":
     base = paso0()
     paso1(base)
     paso2(base)
+    d4_stdin(base)
