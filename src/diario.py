@@ -35,6 +35,9 @@ HERRAMIENTAS = ("Read,Write,Edit,Glob,Grep,ToolSearch,Agent,Task,WebSearch,WebFe
 DESATENDIDA = ("Ejecucion desatendida: nadie puede responder, no hagas preguntas; si falta algo, anotalo y sigue. "
                "Termina con una linea ESTADO_FASE: ok, vacio, sin_chrome o error.")
 PRUEBA = " MODO PRUEBA: no envies candidaturas, formularios ni correos."
+# El postulador no necesita el perfil (sus datos llegan por src.cli perfil-formulario): sin acceso, no puede
+# "recuperar" el modo de él ni editarlo si un comando falla
+SIN_PERFIL = "Read(config/profile.yaml),Edit(config/profile.yaml),Write(config/profile.yaml)"
 LIMITE = re.compile(r"hit your limit|usage limit|limite de uso", re.I)
 
 
@@ -79,10 +82,11 @@ class Diario:
         self.fases.append({"fase": fase, "estado": estado, "detalle": detalle[:300], **extra})
         print(f"[{datetime.now():%H:%M:%S}] {fase:12} {estado:10} {detalle[:150]}", flush=True)
 
-    def claude(self, fase: str, prompt: str, chrome=False, cwd: Path | None = None) -> dict:
+    def claude(self, fase: str, prompt: str, chrome=False, cwd: Path | None = None, prohibidas: str = "") -> dict:
         prompt = _seguro(f"{prompt} {DESATENDIDA}{PRUEBA if self.a.prueba else ''}")
         cmd = [shutil.which("claude") or "claude", "-p", prompt, "--output-format", "json",
-               "--allowedTools", HERRAMIENTAS] + (["--chrome"] if chrome else [])
+               "--allowedTools", HERRAMIENTAS] + (["--chrome"] if chrome else []) \
+            + (["--disallowedTools", prohibidas] if prohibidas else [])
         if self.a.simular:
             self.registrar(fase, "simulado", prompt.split(" Ejecucion")[0])
             return {"estado": "ok"}
@@ -143,8 +147,20 @@ class Diario:
             return self.registrar("adaptar", "vacia", "no hay ofertas nuevas")
         self.claude("adaptar", "/adaptar")
 
+    def modo_valido(self, fase: str) -> bool:
+        """Antes de una fase que puede enviar: si no se puede obtener el modo efectivo, la fase no arranca."""
+        try:
+            m = json.loads(self.cli("modo"))
+            assert m["portales"] in ("revision", "auto") and m["espontaneas"] in ("borrador", "auto"), m
+            if self.a.prueba:
+                assert m["prueba"] and m["portales"] == "revision" and m["espontaneas"] == "borrador", m
+            return True
+        except Exception as e:   # noqa: BLE001 - cualquier fallo de modo detiene la fase
+            self.registrar(fase, "error", f"src.cli modo falló, la fase no se ejecuta: {e}")
+            return False
+
     def postular(self):
-        if not self.activa("postular"):
+        if not self.activa("postular") or not self.modo_valido("postular"):
             return
         intentadas: list[str] = []
         while not self.parar and self.chrome:
@@ -160,10 +176,12 @@ class Diario:
                     self.registrar("postular", "vacia", f"{motivo} ({len(p['cv_adaptado'])} en cola, cupo {p['cupo_portales']})")
                 return
             intentadas += lote
-            self.claude("postular", "/postular " + " ".join(lote), chrome=True)
+            if self.claude("postular", "/postular " + " ".join(lote), chrome=True,
+                           prohibidas=SIN_PERFIL)["estado"] in ("error", "timeout"):
+                return   # una tanda fallida (p. ej. modo o preparar fallaron) detiene la fase: no se lanzan más lotes
 
     def espontaneas(self):
-        if not self.activa("espontaneas"):
+        if not self.activa("espontaneas") or not self.modo_valido("espontaneas"):
             return
         if not self.chrome:
             return self.registrar("espontaneas", "omitida", "Chrome no disponible en postular")

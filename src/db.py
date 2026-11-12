@@ -151,6 +151,8 @@ def huella(ruta: Path | None = None) -> dict:
 def cambiar_estado(con, oid: str, estado: str, nota: str | None = None):
     if estado not in ESTADOS:
         raise ValueError(f"Estado no válido: {estado}. Usa uno de {ESTADOS}")
+    if PRUEBA and estado == "enviada":
+        raise SystemExit("Modo prueba: nunca se envía, así que no se puede marcar ninguna oferta como enviada.")
     fila = con.execute("SELECT notas FROM ofertas WHERE id = ?", (oid,)).fetchone()
     if not fila:
         raise ValueError(f"No existe la oferta {oid}")

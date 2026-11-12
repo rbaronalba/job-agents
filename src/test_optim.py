@@ -137,6 +137,8 @@ if modo == "no_json":
     sys.exit(3)
 if modo == "limite" and fase == "/buscar":
     texto = "You've hit your limit · resets 2:40pm"
+elif modo == "error_postular" and fase == "/postular":
+    texto = "preparar falló: no tiene CV adaptado\\nESTADO_FASE: error"
 elif modo == "sin_chrome" and fase == "/postular":
     texto = "Chrome no conectado. ESTADO_FASE: sin_chrome"
 else:
@@ -282,6 +284,51 @@ def d5_errores(base: Path):
     print("D5 errores OK (simulada)")
 
 
+def d3_seguridad(base: Path):
+    from argparse import Namespace
+    from .cli import modos
+    from .diario import Diario
+    # modos(): nunca supone un modo
+    for envio in ({}, {"modo": "revision"}, {"modo": "auto", "espontaneas_modo": "envia"}, {"modo": "Auto", "espontaneas_modo": "borrador"}):
+        try:
+            modos({"envio": envio})
+            raise AssertionError(f"modos aceptó {envio}")
+        except SystemExit:
+            pass
+    assert modos({"envio": {"modo": "auto", "espontaneas_modo": "borrador"}})["portales"] == "auto"
+    # En prueba no se puede marcar nada como enviada (ni con enviada ni con estado)
+    h = json.loads(cli("huella", base=base))
+    con = db.conectar(base)
+    oid = con.execute("SELECT id FROM ofertas WHERE estado = 'cv_adaptado'").fetchone()[0]
+    con.close()
+    assert "nunca se envía" in cli("enviada", oid, "--origen", "LinkedIn", prueba=True, base=base, ok=False)
+    assert "nunca se envía" in cli("estado", oid, "enviada", prueba=True, base=base, ok=False)
+    assert json.loads(cli("huella", base=base)) == h
+    # El orquestador no lanza postular ni espontáneas si `modo` falla
+    falso = claude_falso()
+    (falso / "llamadas.jsonl").unlink(missing_ok=True)
+    path = os.environ["PATH"]
+    os.environ["PATH"] = f"{falso}{os.pathsep}{path}"
+    try:
+        d = Diario(Namespace(prueba=True, simular=False, timeout=60, fases=["postular", "espontaneas"], origen_db=base,
+                             lote=1, max_ofertas=None))
+        original = d.cli
+        d.cli = lambda *a: (_ for _ in ()).throw(RuntimeError("perfil roto")) if a[0] == "modo" else original(*a)
+        d.postular(); d.espontaneas()
+    finally:
+        os.environ["PATH"] = path
+    assert not (falso / "llamadas.jsonl").exists(), "se lanzó Claude con el modo roto"
+    assert [(f["fase"], f["estado"]) for f in d.fases] == [("postular", "error"), ("espontaneas", "error")], d.fases
+    assert all("src.cli modo falló" in f["detalle"] for f in d.fases)
+    # Una tanda de postular con ESTADO_FASE: error detiene la fase (no se lanzan más lotes)
+    _, ll = diario(falso, "--prueba", "--origen-db", str(base), "--lote", "1", "--fases", "postular", modo="error_postular")
+    assert [l["argv"][1].split()[0] for l in ll] == ["/postular"], ll
+    from .diario import SIN_PERFIL
+    a = ll[0]["argv"]
+    assert a[a.index("--disallowedTools") + 1] == SIN_PERFIL, a   # el postulador no puede leer ni editar el perfil
+    print("D3 seguridad OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -291,3 +338,4 @@ if __name__ == "__main__":
     paso2(base)
     d4_stdin(base)
     d5_errores(base)
+    d3_seguridad(base)

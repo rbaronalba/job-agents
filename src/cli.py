@@ -42,10 +42,16 @@ def perfil() -> dict:
 
 def modos(p: dict | None = None) -> dict:
     """Modos de envío efectivos. En modo prueba nunca se envía: revision y borrador, digan lo que digan el perfil."""
-    envio = (p or perfil()).get("envio", {})
+    envio = (p or perfil()).get("envio") or {}
     if db.PRUEBA:
         return {"portales": "revision", "espontaneas": "borrador", "prueba": True}
-    return {"portales": envio.get("modo", "revision"), "espontaneas": envio.get("espontaneas_modo", "borrador"), "prueba": False}
+    # Nunca se supone un modo: si falta o no es válido, error (y la fase se detiene)
+    m = {"portales": envio.get("modo"), "espontaneas": envio.get("espontaneas_modo")}
+    validos = {"portales": ("revision", "auto"), "espontaneas": ("borrador", "auto")}
+    if any(m[k] not in validos[k] for k in m):
+        raise SystemExit(f"Modo de envío no válido en config/profile.yaml: envio.modo={m['portales']!r}, "
+                         f"envio.espontaneas_modo={m['espontaneas']!r}")
+    return {**m, "prueba": False}
 
 
 def leer_json(ruta: str):
