@@ -41,6 +41,15 @@ SIN_PERFIL = "Read(config/profile.yaml),Edit(config/profile.yaml),Write(config/p
 LIMITE = re.compile(r"hit your limit|usage limit|limite de uso", re.I)
 
 
+_ESTADO = re.compile(r"ESTADO_FASE\W*(ok|vacio|vacia|sin_chrome|error)\b", re.I)
+
+
+def estado_de(texto: str) -> str | None:
+    """Último ESTADO_FASE válido del texto, tolerando Markdown (**error**, `ok`); un valor desconocido no cuenta."""
+    marcas = _ESTADO.findall(texto or "")
+    return marcas[-1].lower() if marcas else None
+
+
 def _seguro(texto: str) -> str:
     # claude es un .CMD en Windows: los argumentos pasan por cmd.exe
     if re.search(r'[\r\n"%&|<>^]', texto):
@@ -108,8 +117,7 @@ class Diario:
         diagnostico = {"codigo_salida": r.returncode, "is_error": res.get("is_error"), "subtype": res.get("subtype"),
                        "errors": errores, "stderr": (r.stderr or "")[-1000:] or None}
         res["_diagnostico"] = diagnostico
-        marcas = re.findall(r"ESTADO_FASE:\s*(\w+)", texto)
-        estado = marcas[-1] if marcas else ("error" if res.get("is_error") or r.returncode else "ok")
+        estado = estado_de(texto) or ("error" if res.get("is_error") or r.returncode else "ok")
         if any(LIMITE.search(t) for t in (texto, r.stderr or "", *errores)):
             estado, self.parar = "limite", True
         if estado == "sin_chrome":

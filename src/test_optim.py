@@ -366,6 +366,24 @@ def d1_correo(base: Path):
     print("D1 correo OK (simulada)")
 
 
+def estado_fase():
+    from .diario import estado_de
+    # Textos reales devueltos por el modelo en la validación del 12-nov
+    casos = {
+        "ESTADO_FASE: **error** — modo prueba activo": "error",
+        "hecho\nESTADO_FASE: ok": "ok",
+        "**ESTADO_FASE:** sin_chrome": "sin_chrome",
+        "ESTADO_FASE: `vacio`": "vacio",
+        "ESTADO_FASE: ok al principio\n...\nESTADO_FASE: error": "error",   # manda la última
+        "ESTADO_FASE: pasos 1.1 y 1.2 completados": None,                   # valor desconocido: no cuenta
+        "ESTADO_FASE": None,
+        "sin marca": None,
+    }
+    for texto, esperado in casos.items():
+        assert estado_de(texto) == esperado, (texto, estado_de(texto))
+    print("ESTADO_FASE OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -377,3 +395,4 @@ if __name__ == "__main__":
     d5_errores(base)
     d3_seguridad(base)
     d1_correo(base)
+    estado_fase()
