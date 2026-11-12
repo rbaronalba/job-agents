@@ -258,6 +258,30 @@ def d4_stdin(base: Path):
     print("D4 stdin OK (simulada)")
 
 
+def ultimo_diario() -> tuple[list[dict], Path]:
+    d = max((db.RAIZ / "data" / "tmp" / "prueba" / "logs" / "diario").iterdir(), key=lambda p: p.stat().st_mtime)
+    return json.loads((d / "diario.json").read_text(encoding="utf-8")), d
+
+
+def d5_errores(base: Path):
+    falso = claude_falso()
+    # Error real de claude -p (forma de --max-turns): result vacío, errors con el motivo, código 1
+    out, _ = diario(falso, "--prueba", "--origen-db", str(base), "--fases", "buscar", modo="max_turns")
+    fases, carpeta = ultimo_diario()
+    f = fases[0]
+    assert f["estado"] == "error" and f["codigo_salida"] == 1 and f["is_error"] is True, f
+    assert f["subtype"] == "error_max_turns" and f["errors"] == ["Reached maximum number of turns (1)"], f
+    assert "Reached maximum number of turns" in f["detalle"], f
+    fase_json = json.loads(next(carpeta.glob("*-buscar-*.json")).read_text(encoding="utf-8"))
+    assert fase_json["_diagnostico"]["codigo_salida"] == 1 and fase_json["errors"], fase_json
+    # Salida que no es JSON: se conservan salida, stderr y código
+    out, _ = diario(falso, "--prueba", "--origen-db", str(base), "--fases", "buscar", modo="no_json")
+    f = ultimo_diario()[0][0]
+    assert f["estado"] == "error" and f["codigo_salida"] == 3 and f["subtype"] == "salida_no_json", f
+    assert "fallo interno del CLI" in f["stderr"] and "fallo interno del CLI" in f["detalle"], f
+    print("D5 errores OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -266,3 +290,4 @@ if __name__ == "__main__":
     paso1(base)
     paso2(base)
     d4_stdin(base)
+    d5_errores(base)

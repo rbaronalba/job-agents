@@ -97,12 +97,16 @@ class Diario:
             return {"estado": "timeout"}
         try:
             res = json.loads(salida)
-        except ValueError:
-            res = {"result": salida or r.stderr, "is_error": True}
+        except ValueError:   # salida no JSON: se guarda tal cual para no perder el error
+            res = {"result": None, "is_error": True, "subtype": "salida_no_json", "salida": salida[-2000:]}
         texto = str(res.get("result") or "")
+        errores = [str(e) for e in res.get("errors") or []]
+        diagnostico = {"codigo_salida": r.returncode, "is_error": res.get("is_error"), "subtype": res.get("subtype"),
+                       "errors": errores, "stderr": (r.stderr or "")[-1000:] or None}
+        res["_diagnostico"] = diagnostico
         marcas = re.findall(r"ESTADO_FASE:\s*(\w+)", texto)
         estado = marcas[-1] if marcas else ("error" if res.get("is_error") or r.returncode else "ok")
-        if LIMITE.search(texto) or LIMITE.search(r.stderr or ""):
+        if any(LIMITE.search(t) for t in (texto, r.stderr or "", *errores)):
             estado, self.parar = "limite", True
         if estado == "sin_chrome":
             self.chrome = False
@@ -110,9 +114,12 @@ class Diario:
         n = sum(1 for f in self.fases if f["fase"] == fase) + 1
         (self.dir_logs / f"{len(self.fases) + 1:02d}-{fase}-{n}.json").write_text(
             json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
-        resumen = re.sub(r"\s+", " ", texto.replace("ESTADO_FASE:", ""))[-300:]
+        # Sin resultado útil, el detalle es el error: errors del CLI, si no stderr, si no la salida en bruto
+        util = texto or "; ".join(errores) or diagnostico["stderr"] or res.get("salida") or f"código de salida {r.returncode}"
+        resumen = re.sub(r"\s+", " ", util.replace("ESTADO_FASE:", ""))[-300:]
         self.registrar(fase, estado, resumen, session_id=res.get("session_id"), turnos=res.get("num_turns"),
-                       segundos=round(time.time() - inicio), coste_usd=res.get("total_cost_usd"), texto=texto[-1500:])
+                       segundos=round(time.time() - inicio), coste_usd=res.get("total_cost_usd"), texto=util[-1500:],
+                       **diagnostico)
         return {"estado": estado}
 
     def activa(self, fase: str) -> bool:
