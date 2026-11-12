@@ -9,6 +9,11 @@
   enviada     Marca una oferta como enviada (y la registra en candidaturas-sync)
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
+  modo        Modos de envío efectivos (JOB_AGENTS_PRUEBA=1 fuerza revision/borrador) y rutas activas
+  huella      Huella de solo lectura del histórico para comprobar que no se pierde ni cambia nada
+
+Variables de entorno: JOB_AGENTS_DB (usar otra base, p. ej. una copia) y JOB_AGENTS_PRUEBA=1 (ensayo:
+no envía, exige JOB_AGENTS_DB y escribe Excel, CVs, logs y CSV en data/tmp/prueba/).
 """
 from __future__ import annotations
 
@@ -30,6 +35,14 @@ def perfil() -> dict:
     if not ruta.exists():
         raise SystemExit("Falta config/profile.yaml. Copia config/profile.example.yaml y rellénalo.")
     return yaml.safe_load(ruta.read_text(encoding="utf-8"))
+
+
+def modos(p: dict | None = None) -> dict:
+    """Modos de envío efectivos. En modo prueba nunca se envía: revision y borrador, digan lo que digan el perfil."""
+    envio = (p or perfil()).get("envio", {})
+    if db.PRUEBA:
+        return {"portales": "revision", "espontaneas": "borrador", "prueba": True}
+    return {"portales": envio.get("modo", "revision"), "espontaneas": envio.get("espontaneas_modo", "borrador"), "prueba": False}
 
 
 def leer_json(ruta: str):
@@ -140,7 +153,7 @@ def cmd_cv(args):
     # El titular del CV debe llevar el título exacto del puesto (sin etiquetas tipo "(m/f/d)" o "(remoto)")
     if db.norm(oferta["titulo"]) not in db.norm(adapt.get("titular", "")):
         raise SystemExit(f"CV NO válido: el titular debe incluir el título del puesto '{oferta['titulo']}'")
-    carpeta = RAIZ / "output" / oferta["semana"] / args.id
+    carpeta = db.OUTPUT / oferta["semana"] / args.id
     inf = cv.generar(adapt, carpeta)
     (carpeta / "adaptacion.json").write_text(json.dumps(adapt, ensure_ascii=False, indent=1), encoding="utf-8")
     problemas = []
@@ -167,11 +180,11 @@ def cmd_preparar(args):
     o = con.execute("SELECT * FROM ofertas WHERE id = ?", (args.id,)).fetchone()
     if not o:
         raise SystemExit(f"No existe la oferta {args.id}")
-    origen = RAIZ / "output" / o["semana"] / args.id
+    origen = db.OUTPUT / o["semana"] / args.id
     cv_pdf = origen / cv_mod.nombre_pdf()
     if not cv_pdf.exists():
         raise SystemExit(f"{args.id} no tiene CV adaptado; ejecuta /adaptar primero")
-    subir = RAIZ / "output" / "SUBIR" / args.id
+    subir = db.OUTPUT / "SUBIR" / args.id
     subir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(cv_pdf, subir / cv_pdf.name)
     carta = origen / "carta.txt"
@@ -180,7 +193,7 @@ def cmd_preparar(args):
         "id": o["id"], "empresa": o["empresa"], "titulo": o["titulo"], "portales": json.loads(o["portales"]),
         "urls": json.loads(o["urls"]), "tipo_candidatura": o["tipo_candidatura"],
         "cv": str(subir / cv_pdf.name), "carta": carta.read_text(encoding="utf-8") if carta.exists() else None,
-        "candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": p["envio"]["modo"],
+        "candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": modos(p)["portales"],
     }, ensure_ascii=False, indent=1))
 
 
@@ -207,10 +220,12 @@ def cmd_enviada(args):
     con.commit()
     print(f"{args.id} -> enviada")
     # LinkedIn manda "se ha enviado tu solicitud" y candidaturas-sync la detecta sola
-    if args.origen.lower() != "linkedin":
+    if db.PRUEBA:
+        print("Seguimiento: modo prueba, no se registra en candidaturas-sync")
+    elif args.origen.lower() != "linkedin":
         print("Seguimiento:", registrar_en_seguimiento(o, args.origen))
     import shutil
-    shutil.rmtree(RAIZ / "output" / "SUBIR" / args.id, ignore_errors=True)
+    shutil.rmtree(db.OUTPUT / "SUBIR" / args.id, ignore_errors=True)
 
 
 def cmd_excel(args):
@@ -238,10 +253,19 @@ def cmd_resumen(args):
         lineas.append(f"- Errores: {args.errores}")
     texto = "\n".join(lineas)
     print(texto)
-    logs = RAIZ / "logs"
-    logs.mkdir(exist_ok=True)
+    logs = db.LOGS
+    logs.mkdir(parents=True, exist_ok=True)
     with open(logs / f"{hoy}.md", "a", encoding="utf-8") as f:
         f.write(texto + "\n\n")
+
+
+def cmd_modo(args):
+    m = modos()
+    print(json.dumps({**m, "db": str(db.RUTA), "empresas_csv": str(db.EMPRESAS), "output": str(db.OUTPUT)}, ensure_ascii=False))
+
+
+def cmd_huella(args):
+    print(json.dumps(db.huella(Path(args.ruta) if args.ruta else None), ensure_ascii=False))
 
 
 def main(argv=None):
@@ -284,6 +308,12 @@ def main(argv=None):
     s.set_defaults(fn=cmd_excel)
 
     s = sub.add_parser("resumen"); s.add_argument("--errores"); s.set_defaults(fn=cmd_resumen)
+
+    s = sub.add_parser("modo", help="Modos de envío efectivos y rutas (en JOB_AGENTS_PRUEBA=1: revision/borrador)")
+    s.set_defaults(fn=cmd_modo)
+    s = sub.add_parser("huella", help="Huella de solo lectura del histórico (integridad, conteos, hash)")
+    s.add_argument("--ruta", help="Otra base SQLite (por defecto la activa)")
+    s.set_defaults(fn=cmd_huella)
 
     args = p.parse_args(argv)
     args.fn(args)
