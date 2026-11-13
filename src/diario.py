@@ -56,7 +56,10 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
     lectura = [] if fase == "email" and not prueba else GMAIL_LECTURA
     permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura)]
     prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
-    permitidas.append("Bash(python -m candidaturas:*)")
+    if prueba:
+        prohibidas.append("Bash(python -m candidaturas:*)")   # escribe en el candidaturas.xlsx real
+    else:
+        permitidas.append("Bash(python -m candidaturas:*)")
     if fase == "postular":
         prohibidas.append(SIN_PERFIL)
     return ",".join(permitidas), ",".join(prohibidas)
