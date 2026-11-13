@@ -325,7 +325,7 @@ def d3_seguridad(base: Path):
     assert [l["argv"][1].split()[0] for l in ll] == ["/postular"], ll
     from .diario import SIN_PERFIL
     a = ll[0]["argv"]
-    assert a[a.index("--disallowedTools") + 1] == SIN_PERFIL, a   # el postulador no puede leer ni editar el perfil
+    assert SIN_PERFIL in a[a.index("--disallowedTools") + 1], a   # el postulador no puede leer ni editar el perfil
     print("D3 seguridad OK (simulada)")
 
 

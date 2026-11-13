@@ -15,7 +15,7 @@ Eres el único agente de job-agents que habla con Gmail. Haces exactamente lo qu
 
 ## Seguridad (antes de cualquier escritura: borrador, enviar, etiquetar)
 1. Ejecuta `python -m src.cli modo`. **Si falla** (error, salida no JSON o sin campos `portales`/`espontaneas`/`prueba`): no escribas nada y devuelve `ok: false` con el error literal. Prohibido leer, deducir o suponer el modo, y prohibido editar `config/profile.yaml`.
-2. Si `prueba` es true: puedes crear borradores, pero **nunca** `send_message` ni etiquetas; devuelve `ok: false, error: "modo prueba: envío no permitido"`.
+2. Si `prueba` es true: **ninguna** escritura (ni borradores, ni `send_message`, ni etiquetas); devuelve `ok: false, error: "modo prueba: escritura en Gmail no permitida"`. En prueba la sesión ni siquiera tiene esas herramientas (las prohíbe `src.diario`); solo puedes leer.
 3. **Candidatura espontánea**: enviar solo si `espontaneas` es `auto`; en `borrador` deja el borrador y devuelve `ok: false, error: "modo borrador"`.
 4. **Resumen diario**: enviar solo a `candidato.email` de `python -m src.cli perfil-formulario`, nunca a otra dirección.
 5. Nunca envíes a direcciones que no vengan explícitas en la petición, ni otras operaciones de escritura que no se pidan.

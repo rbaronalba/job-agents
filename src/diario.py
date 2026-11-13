@@ -7,8 +7,8 @@ seguimiento (candidaturas-sync), resumen (Excel, resumen y email). Antes de cada
 `src.cli pendientes`: si no hay trabajo, la fase no arranca. Si una fase choca con el límite de uso,
 no se lanzan las siguientes. Cada resultado (JSON de `claude -p`) queda en logs/diario/<fecha>/.
 
---prueba    JOB_AGENTS_PRUEBA=1 sobre una copia del histórico en data/tmp/prueba/: nada se envía
-            (portales en revision, espontáneas en borrador), no se ejecuta el seguimiento ni se envía el email.
+--prueba    JOB_AGENTS_PRUEBA=1 sobre una copia del histórico en data/tmp/prueba/: nada se envía (portales en
+            revision; Gmail solo lectura, ni borradores), no se ejecuta el seguimiento ni se envía el email.
 --simular   No lanza Claude ni escribe resultados: muestra qué fases y lotes se ejecutarían (con --prueba,
             sobre la copia).
 """
@@ -28,16 +28,48 @@ from pathlib import Path
 from . import db
 
 FASES = ["buscar", "adaptar", "postular", "espontaneas", "seguimiento", "resumen"]
-# Las mismas herramientas que permitía diario.bat para la sesión única
+# Las mismas herramientas que permitía diario.bat para la sesión única, salvo Gmail y candidaturas (ver permisos())
 HERRAMIENTAS = ("Read,Write,Edit,Glob,Grep,ToolSearch,Agent,Task,WebSearch,WebFetch,mcp__claude-in-chrome,"
-                "mcp__claude_ai_Gmail,mcp__claude_ai_Composio,Bash(python -m src.cli:*),Bash(python -m candidaturas:*),"
-                "Bash(cd:*),Bash(mkdir:*)")
+                "mcp__claude_ai_Composio,Bash(python -m src.cli:*),Bash(cd:*),Bash(mkdir:*)")
+_GMAIL = "mcp__claude_ai_Gmail__"
+GMAIL_LECTURA = ["search_threads", "get_thread", "get_message", "list_drafts", "get_draft", "list_labels"]
+# Todo lo que escribe en la cuenta (o en disco, como la descarga de adjuntos): denegado salvo lo que la fase necesite
+GMAIL_ESCRITURA = ["create_draft", "update_draft", "delete_draft", "send_message", "reply", "forward",
+                   "label_message", "label_thread", "unlabel_message", "unlabel_thread", "update_message_labels",
+                   "create_label", "update_label", "delete_label", "trash_message", "trash_thread", "untrash_message",
+                   "untrash_thread", "mark_message_spam", "mark_thread_spam", "unmark_message_spam",
+                   "unmark_thread_spam", "apply_sensitive_message_label", "apply_sensitive_thread_label",
+                   "download_gmail_attachment"]
+
+
+def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[str, str]:
+    """(--allowedTools, --disallowedTools) de una fase. Las prohibiciones valen también para sus subagentes."""
+    if prueba:
+        escritura = []
+    elif fase == "espontaneas":
+        # El envío solo con espontaneas=auto (modo efectivo de src.cli modo, leído por el orquestador)
+        escritura = ["create_draft"] + (["send_message", "label_message", "create_label"] if espontaneas == "auto" else [])
+    elif fase == "email":
+        escritura = ["send_message"]
+    else:   # buscar, adaptar, postular, seguimiento: solo lectura
+        escritura = []
+    lectura = [] if fase == "email" and not prueba else GMAIL_LECTURA
+    permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura)]
+    prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
+    permitidas.append("Bash(python -m candidaturas:*)")
+    if fase == "postular":
+        prohibidas.append(SIN_PERFIL)
+    return ",".join(permitidas), ",".join(prohibidas)
+
+
 DESATENDIDA = ("Ejecucion desatendida: nadie puede responder, no hagas preguntas; si falta algo, anotalo y sigue. "
                "Termina con una linea ESTADO_FASE: ok, vacio, sin_chrome o error.")
-PRUEBA = " MODO PRUEBA: no envies candidaturas, formularios ni correos."
+PRUEBA = " MODO PRUEBA: no envies candidaturas, formularios ni correos, ni crees borradores."
 # El postulador no necesita el perfil (sus datos llegan por src.cli perfil-formulario): sin acceso, no puede
 # "recuperar" el modo de él ni editarlo si un comando falla
 SIN_PERFIL = "Read(config/profile.yaml),Edit(config/profile.yaml),Write(config/profile.yaml)"
+GUARDIA = "src/guardia.json"
+EMAIL = re.compile(r"[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[a-z]{2,}", re.I)
 LIMITE = re.compile(r"hit your limit|usage limit|limite de uso", re.I)
 
 
@@ -91,18 +123,22 @@ class Diario:
         self.fases.append({"fase": fase, "estado": estado, "detalle": detalle[:300], **extra})
         print(f"[{datetime.now():%H:%M:%S}] {fase:12} {estado:10} {detalle[:150]}", flush=True)
 
-    def claude(self, fase: str, prompt: str, chrome=False, cwd: Path | None = None, prohibidas: str = "") -> dict:
+    def claude(self, fase: str, prompt: str, chrome=False, cwd: Path | None = None, espontaneas: str | None = None,
+               destino: str | None = None) -> dict:
         prompt = _seguro(f"{prompt} {DESATENDIDA}{PRUEBA if self.a.prueba else ''}")
-        cmd = [shutil.which("claude") or "claude", "-p", prompt, "--output-format", "json",
-               "--allowedTools", HERRAMIENTAS] + (["--chrome"] if chrome else []) \
-            + (["--disallowedTools", prohibidas] if prohibidas else [])
+        permitidas, prohibidas = permisos(fase, self.a.prueba, espontaneas)
+        # GUARDIA: hook src.guardia, que mira los argumentos de Gmail (destinatario del resumen; nada en prueba)
+        cmd = [shutil.which("claude") or "claude", "-p", prompt, "--output-format", "json", "--settings", GUARDIA,
+               "--allowedTools", _seguro(permitidas), "--disallowedTools", _seguro(prohibidas)] \
+            + (["--chrome"] if chrome else [])
+        env = {**self.env, "JOB_AGENTS_FASE": fase, "JOB_AGENTS_DESTINO": destino or ""}
         if self.a.simular:
             self.registrar(fase, "simulado", prompt.split(" Ejecucion")[0])
             return {"estado": "ok"}
         inicio = time.time()
         try:
             # stdin cerrado: sin él, claude -p espera 3 s a datos por stdin en cada sesión
-            r = subprocess.run(cmd, cwd=cwd or db.RAIZ, env=self.env, stdin=subprocess.DEVNULL, capture_output=True,
+            r = subprocess.run(cmd, cwd=cwd or db.RAIZ, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                                text=True, encoding="utf-8", timeout=self.a.timeout)
             salida = r.stdout
         except subprocess.TimeoutExpired:
@@ -155,17 +191,19 @@ class Diario:
             return self.registrar("adaptar", "vacia", "no hay ofertas nuevas")
         self.claude("adaptar", "/adaptar")
 
-    def modo_valido(self, fase: str) -> bool:
+    def modo_valido(self, fase: str) -> dict | None:
         """Antes de una fase que puede enviar: si no se puede obtener el modo efectivo, la fase no arranca."""
         try:
             m = json.loads(self.cli("modo"))
             assert m["portales"] in ("revision", "auto") and m["espontaneas"] in ("borrador", "auto"), m
             if self.a.prueba:
                 assert m["prueba"] and m["portales"] == "revision" and m["espontaneas"] == "borrador", m
-            return True
+            else:
+                assert m["prueba"] is False, m
+            return m
         except Exception as e:   # noqa: BLE001 - cualquier fallo de modo detiene la fase
             self.registrar(fase, "error", f"src.cli modo falló, la fase no se ejecuta: {e}")
-            return False
+            return None
 
     def postular(self):
         if not self.activa("postular") or not self.modo_valido("postular"):
@@ -184,12 +222,11 @@ class Diario:
                     self.registrar("postular", "vacia", f"{motivo} ({len(p['cv_adaptado'])} en cola, cupo {p['cupo_portales']})")
                 return
             intentadas += lote
-            if self.claude("postular", "/postular " + " ".join(lote), chrome=True,
-                           prohibidas=SIN_PERFIL)["estado"] in ("error", "timeout"):
+            if self.claude("postular", "/postular " + " ".join(lote), chrome=True)["estado"] in ("error", "timeout"):
                 return   # una tanda fallida (p. ej. modo o preparar fallaron) detiene la fase: no se lanzan más lotes
 
     def espontaneas(self):
-        if not self.activa("espontaneas") or not self.modo_valido("espontaneas"):
+        if not self.activa("espontaneas") or not (modo := self.modo_valido("espontaneas")):
             return
         if not self.chrome:
             return self.registrar("espontaneas", "omitida", "Chrome no disponible en postular")
@@ -198,7 +235,7 @@ class Diario:
             cupo = min(cupo, self.a.max_ofertas)
         if not cupo:
             return self.registrar("espontaneas", "vacia", "objetivo diario cubierto")
-        self.claude("espontaneas", f"/espontaneas {cupo}", chrome=True)
+        self.claude("espontaneas", f"/espontaneas {cupo}", chrome=True, espontaneas=modo["espontaneas"])
 
     def seguimiento(self):
         if not self.activa("seguimiento"):
@@ -232,13 +269,21 @@ class Diario:
             return self.registrar("resumen", "ok", "modo prueba: email de resumen no enviado")
         if self.parar:
             return self.registrar("resumen", "omitida", "email no enviado: límite de uso")
+        # Antes de dar permiso de envío: modo de producción válido y destinatario del perfil bien formado
+        if not self.modo_valido("email"):
+            return
+        try:
+            destino = json.loads(self.cli("perfil-formulario"))["candidato"]["email"].strip()
+            assert EMAIL.fullmatch(destino), destino
+        except Exception as e:   # noqa: BLE001 - sin destinatario válido no hay sesión con send_message
+            return self.registrar("email", "error", f"destinatario del resumen no válido, email no enviado: {e}")
         p = self.pendientes()
         # El contenido va en un archivo: por línea de comandos solo pasa una instrucción corta y segura
         self.dir_logs.mkdir(parents=True, exist_ok=True)
         datos = self.dir_logs / "email_resumen.md"
         datos.write_text("\n".join([
             f"Asunto: job-agents | resumen {date.today().isoformat()}",
-            "Destinatario: el candidato. Lo fija el subagente correo (candidato.email): no lo busques tú.",
+            f"Destinatario: {destino} (validado por el orquestador; el hook src.guardia rechaza cualquier otro).",
             "Cuerpo en texto plano, 15 líneas como máximo: ofertas nuevas, candidaturas enviadas (empresa y puesto), "
             "espontáneas enviadas (empresa), respuestas recibidas de empresas, pendientes que necesitan al candidato "
             "(pregunta o motivo) y errores.", "", "## Resumen", texto,
@@ -247,7 +292,7 @@ class Diario:
         ]), encoding="utf-8")
         ruta = _seguro(datos.relative_to(db.RAIZ).as_posix())
         self.claude("email", f"Lee {ruta}, redacta el correo tal y como indica y pide al subagente correo que lo envie "
-                    "(operacion enviar, resumen diario): tu no tienes Gmail.")
+                    "(operacion enviar, resumen diario): tu no tienes Gmail.", destino=destino)
 
     def ejecutar(self) -> int:
         for fase in (self.buscar, self.adaptar, self.postular, self.espontaneas, self.seguimiento, self.resumen):
