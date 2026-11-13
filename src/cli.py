@@ -179,6 +179,8 @@ def cmd_estado(args):
 def cmd_cv(args):
     from . import cv
     if args.id == "base":
+        if db.PRUEBA:   # reescribiría los PDF reales de cv/
+            raise SystemExit("cv base no se ejecuta en modo prueba (JOB_AGENTS_PRUEBA=1): escribe en cv/ real")
         # Modelos fijos que se adjuntan en las candidaturas espontáneas
         for idioma in ("es", "en"):
             inf = cv.generar({"idioma": idioma}, RAIZ / "cv" / "front" / idioma)
