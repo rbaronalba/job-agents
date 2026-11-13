@@ -60,6 +60,7 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
     permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura)]
     prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
     prohibidas += ["PowerShell", "NotebookEdit"]   # otras vías de escritura en disco que el orquestador no usa
+    prohibidas.append("AskUserQuestion")           # nadie responde: la sesión no puede quedarse esperando
     if prueba:
         prohibidas.append("Bash(python -m candidaturas:*)")   # escribe en el candidaturas.xlsx real
         prohibidas += [f"{t}(//**/{r})" for r in REALES for t in ("Edit", "Write")]
@@ -70,6 +71,7 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
     return ",".join(permitidas), ",".join(prohibidas)
 
 
+# AskUserQuestion está prohibida en todas las sesiones (permisos()): nadie responde y la sesión no debe esperar
 DESATENDIDA = ("Ejecucion desatendida: nadie puede responder, no hagas preguntas; si falta algo, anotalo y sigue. "
                "Termina con una linea ESTADO_FASE: ok, vacio, sin_chrome o error.")
 PRUEBA = " MODO PRUEBA: no envies candidaturas, formularios ni correos, ni crees borradores."
