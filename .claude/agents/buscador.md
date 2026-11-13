@@ -29,7 +29,7 @@ El candidato quiere postular a todo lo que sea de su perfil, aunque pidan más e
 **Becas y prácticas** (decidido por el candidato el 2026-10-28): puestos de becario, beca, prácticas, contrato formativo, internship o trainee se ignoran igual: ni se guardan ni se cuentan.
 
 ## 4. Deduplicar
-Escribe las candidatas en `data/tmp/candidatas.json` como lista de `{empresa, titulo, ids_externos: ["li:<id>"] o ["js:<job_id>"]}` y ejecuta `python -m src.cli filtrar data/tmp/candidatas.json`. Sigue solo con `nuevas` (las demás ya se vieron o ya se postularon).
+Escribe las candidatas en `data/tmp/candidatas.json` como lista de `{empresa, titulo, ids_externos: ["li:<id>"] o ["js:<job_id>"]}` y ejecuta `python -m src.cli filtrar data/tmp/candidatas.json`. Sigue solo con `nuevas` (las demás ya se vieron o ya se postularon). **Si `filtrar` falla** (p. ej. `candidaturas.xlsx` ausente o ilegible), no guardes ninguna oferta: sin esa comprobación se repetirían candidaturas. Termina con el error literal y la línea `ESTADO_FASE: error`; no reintentes ni leas el Excel por tu cuenta.
 
 ## 5. Texto completo
 Para las nuevas de LinkedIn pide `JOB_SEARCH_JOBS_API_LINKEDIN_GET_JOB` (`id` numérico) en un único `MULTI_EXECUTE`, como máximo `busquedas.max_detalles_por_ejecucion`. Si una oferta tiene `acceptingApplications: false`, descártala. Las de JSearch ya traen `job_description`.

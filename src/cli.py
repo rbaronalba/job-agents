@@ -77,25 +77,33 @@ def ruta_candidaturas() -> Path | None:
 
 
 def ya_postuladas() -> tuple[set[str], set[str]]:
-    """Claves empresa|puesto e ids de LinkedIn del Excel de candidaturas-sync."""
+    """Claves empresa|puesto e ids de LinkedIn del Excel de candidaturas-sync.
+
+    Sin candidaturas_sync configurado no hay nada que comprobar (vacío). Configurado pero ausente, corrupto o
+    ilegible: error, nunca cero candidaturas (se volvería a postular a lo ya enviado)."""
     excel = ruta_candidaturas()
     if excel is None:
         return set(), set()
     if not excel.exists():
-        print(f"Aviso: no encuentro {excel}; no se comprueban candidaturas ya enviadas.", file=sys.stderr)
-        return set(), set()
-
+        raise SystemExit(f"No existe {excel}: no se puede comprobar qué ofertas ya se postularon. Nada filtrado.")
     from openpyxl import load_workbook
-    ws = load_workbook(excel, read_only=True, data_only=True)["Candidaturas"]
-    filas = ws.iter_rows(values_only=True)
-    cab = list(next(filas))
-    i_emp, i_pue, i_ref = cab.index("Empresa"), cab.index("Puesto"), cab.index("Ref")
-    claves, ids = set(), set()
-    for f in filas:
-        if f[i_emp]:
-            claves.add(db.clave(f[i_emp], f[i_pue]))
-        if f[i_ref] and str(f[i_ref]).startswith("li:"):
-            ids.add(str(f[i_ref]))
+    try:
+        wb = load_workbook(excel, read_only=True, data_only=True)
+        try:
+            filas = wb["Candidaturas"].iter_rows(values_only=True)
+            cab = list(next(filas))
+            i_emp, i_pue, i_ref = cab.index("Empresa"), cab.index("Puesto"), cab.index("Ref")
+            claves, ids = set(), set()
+            for f in filas:
+                if f[i_emp]:
+                    claves.add(db.clave(f[i_emp], f[i_pue]))
+                if f[i_ref] and str(f[i_ref]).startswith("li:"):
+                    ids.add(str(f[i_ref]))
+        finally:
+            wb.close()
+    except Exception as e:   # noqa: BLE001 - corrupto, bloqueado, sin hoja o sin columnas: nunca se toma como vacío
+        raise SystemExit(f"No se puede leer {excel} ({type(e).__name__}: {e}): no se puede comprobar qué ofertas "
+                         "ya se postularon. Nada filtrado.")
     return claves, ids
 
 
