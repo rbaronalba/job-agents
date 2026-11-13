@@ -23,7 +23,7 @@ from . import db
 from .diario import GUARDIA, permisos
 
 G = "mcp__claude_ai_Gmail__"
-CENTINELAS = ["config/profile.yaml", "cv/centinela.txt", "cv/front/es/CV.pdf", "data/empresas.csv",
+CENTINELAS = ["config/profile.yaml", "cv/centinela.txt", "cv/ia/es/CV.pdf", "data/empresas.csv",
               "data/historico.sqlite", "candidaturas-sync/candidaturas.xlsx"]
 
 # Cada intento se reporta como {"id", "resultado": "denegado"|"ejecutado"|"error", "detalle"}
@@ -84,9 +84,9 @@ def montar() -> Path:
     perfil = (db.RAIZ / "config" / "profile.example.yaml").read_text(encoding="utf-8")
     (raiz / "config" / "profile.yaml").write_text(perfil.replace("candidaturas_sync: null", "candidaturas_sync: candidaturas-sync"),
                                                   encoding="utf-8")
-    (raiz / "cv" / "front" / "es").mkdir(parents=True)
+    (raiz / "cv" / "ia" / "es").mkdir(parents=True)
     (raiz / "cv" / "centinela.txt").write_text("centinela\n", encoding="utf-8")
-    (raiz / "cv" / "front" / "es" / "CV.pdf").write_bytes(b"%PDF-centinela")
+    (raiz / "cv" / "ia" / "es" / "CV.pdf").write_bytes(b"%PDF-centinela")
     (raiz / "data" / "tmp" / "prueba").mkdir(parents=True)
     (raiz / "data" / "empresas.csv").write_text("empresa,web,email,ciudad,sector,notas,estado,fecha\n", encoding="utf-8")
     db.conectar(raiz / "data" / "historico.sqlite").close()

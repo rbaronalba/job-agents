@@ -15,7 +15,7 @@ Eres el agente que adapta el CV del candidato. Trabajas desde la raíz del proye
 
 ## 1. Por cada oferta, escribe `data/tmp/adapt_<id>.json`
 ```
-{"idioma": idioma de la oferta (es|en), "perfil": "ia"|"datos" (omítelo en ofertas frontend),
+{"idioma": idioma de la oferta (es|en), "perfil": "ia"|"datos" (siempre uno de los dos si `cv_base.yaml` tiene `perfiles`),
  "titular": "<título exacto del puesto> | <2 o 3 hard skills principales de la oferta>",
  "resumen": "...", "skills": [[grupo, "a, b, c"], ...],
  "bullets": {"<id de experiencia>": [...], ...},
@@ -23,10 +23,10 @@ Eres el agente que adapta el CV del candidato. Trabajas desde la raíz del proye
 ```
 
 **Tipo de oferta** (decide primero: fija `perfil` y de qué grupo de competencias puedes tirar)
-- **Frontend** (Angular, React, Vue, frontend, full stack con front): sin `perfil` (usa el CV base tal cual). Incluye en `skills` **todos** los requisitos técnicos de la oferta con su escritura exacta, aunque no estén en la base (el candidato los ha trabajado). Solo en competencias, nunca como logros inventados en viñetas.
+- **Frontend y software en general** (Angular, React, Vue, frontend, full stack, backend, desarrollo de software): `"perfil": "ia"` (el CV de frontend ya no se usa: el de IA también cubre el desarrollo frontend y de software). Parte de `perfiles.ia` e incluye en `skills` **todos** los requisitos técnicos de la oferta con su escritura exacta, aunque no estén en la base (el candidato los ha trabajado). Solo en competencias, nunca como logros inventados en viñetas.
 - **IA, agentes, LLM, automatización** (AI Engineer, agentic AI, prompt engineering, ML engineer orientado a producto): `"perfil": "ia"`. Parte del titular, resumen y competencias de `perfiles.ia` del idioma correspondiente; no añadas ninguna habilidad que no esté ahí ni en la base general. Lo que falte va a `carencias`.
-- **Datos o fútbol** (data analyst, data scientist, scouting): `"perfil": "datos"`. Parte de `perfiles.datos`; no añadas ninguna habilidad que no esté en `skills_datos` ni en la base general. Lo que falte va a `carencias`.
-- **Otros perfiles** (ni frontend, ni IA, ni datos): sin `perfil`, no añadas ninguna habilidad que no esté en la base. Lo que falte va a `carencias`.
+- **Datos o deporte** (data analyst, data scientist, scouting, clubes y empresas de datos deportivos): `"perfil": "datos"`. Parte de `perfiles.datos`; no añadas ninguna habilidad que no esté en `skills_datos` ni en la base general. Lo que falte va a `carencias`.
+- **Otros perfiles** (ni software, ni IA, ni datos): `"perfil": "ia"`, no añadas ninguna habilidad que no esté en la base. Lo que falte va a `carencias`.
 
 **Resumen** (3 frases, máximo 60 palabras): empieza con el título exacto del puesto; incluye las hard skills principales y las soft skills literales de la oferta; una cifra real de la base (90% cobertura, 20% tiempo de respuesta, 10 a 1 minuto). Sin "apasionado", "proactivo", "sinergias" ni frases vacías.
 

@@ -2,7 +2,7 @@
 
 Asunto: Empleo
 
-Solo se adapta este texto; el CV adjunto es siempre el modelo fijo (cv/front/es para empresas españolas, cv/front/en para el resto).
+Solo se adapta este texto; el CV adjunto es siempre el modelo fijo (cv/datos para clubes y empresas de datos deportivos, cv/ia para el resto; es/ para empresas españolas, en/ para las de fuera).
 Se adapta a cada empresa conservando estructura, tono y longitud (unas 200 palabras). Entre corchetes, lo que cambia.
 Sin guiones largos ni medios. Tuteo en plural ("os escribo"). Empresas de fuera de España: en inglés, asunto "Job application | {nombre}".
 

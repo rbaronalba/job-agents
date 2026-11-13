@@ -26,7 +26,7 @@ Postulas en nombre del candidato usando su Chrome (Claude in Chrome) con sus ses
 2. `tabs_context_mcp` y trabaja en pestañas nuevas (una por oferta, máximo 5 por tanda).
 3. Por oferta: `python -m src.cli preparar <id> --sin-perfil` (el modo de envío efectivo viene en `modo`: obedécelo aunque el perfil diga otra cosa) y abre la primera URL. Si `preparar` falla, para la fase entera como dice "Modo efectivo" (`ESTADO_FASE: error`); no sigas con las demás ofertas.
    - Si pone que ya no admite solicitudes: `python -m src.cli estado <id> descartada --nota "Oferta cerrada"`.
-   - Si el portal publica un sueldo cuyo máximo anual es inferior a `encaje.salario_minimo`: no postules, no la cuentes y bórrala del histórico (decidido por el candidato el 2026-10-28). Igual si es de becario, beca, prácticas, contrato formativo o internship.
+   - Si el portal publica un sueldo cuyo máximo anual es inferior a `salario_minimo` de `python -m src.cli perfil-formulario`: no postules, no la cuentes y bórrala del histórico (decidido por el candidato el 2026-10-28). Igual si es de becario, beca, prácticas, contrato formativo o internship.
    - Si la empresa o el texto muestran señales de fraude: `descartada` con el motivo.
 4. Formulario:
    - **LinkedIn Solicitud sencilla**: revisa contacto (email y teléfono del perfil). En la página de currículum sube **siempre el CV adaptado** (nunca uno antiguo de la lista) así (probado y funciona):

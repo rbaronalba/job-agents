@@ -189,10 +189,8 @@ def cmd_cv(args):
     if args.id == "base":
         if db.PRUEBA:   # reescribiría los PDF reales de cv/
             raise SystemExit("cv base no se ejecuta en modo prueba (JOB_AGENTS_PRUEBA=1): escribe en cv/ real")
-        # Modelos fijos que se adjuntan en las candidaturas espontáneas
+        # Modelos fijos que se adjuntan en las candidaturas espontáneas (el de frontend ya no se usa)
         for idioma in ("es", "en"):
-            inf = cv.generar({"idioma": idioma}, RAIZ / "cv" / "front" / idioma)
-            print(f"cv/front/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
             for perfil in ("ia", "datos"):
                 inf = cv.generar({"idioma": idioma, "perfil": perfil}, RAIZ / "cv" / perfil / idioma)
                 print(f"cv/{perfil}/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
@@ -254,8 +252,9 @@ def cmd_preparar(args):
 
 def cmd_perfil_formulario(args):
     p = perfil()
-    print(json.dumps({"candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": modos(p)["portales"]},
-                     ensure_ascii=False, indent=1))
+    # salario_minimo: el postulador no puede leer el perfil (D3) y lo necesita para descartar ofertas por sueldo
+    print(json.dumps({"candidato": p["candidato"], "respuestas": p.get("respuestas", {}), "modo": modos(p)["portales"],
+                      "salario_minimo": (p.get("encaje") or {}).get("salario_minimo")}, ensure_ascii=False, indent=1))
 
 
 def registrar_en_seguimiento(o, origen: str) -> str:
