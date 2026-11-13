@@ -450,6 +450,127 @@ def consulta_lectura():
     print("espontaneas-consulta OK: solo lectura (SHA-256 y mtime idénticos), errores explícitos")
 
 
+def seguridad_v():
+    """Vulnerabilidades 1-4, ya_postuladas() y AskUserQuestion (simulado; las sesiones reales: src.test_seguridad)."""
+    from argparse import Namespace
+    from . import cli as climod
+    from .diario import GMAIL_ESCRITURA, GMAIL_LECTURA, REALES, Diario, permisos
+    from .guardia import motivo
+    g = "mcp__claude_ai_Gmail__"
+    sets = lambda f, pr, e=None: tuple(set(x.split(",")) for x in permisos(f, pr, e))
+    fases = ["buscar", "adaptar", "postular", "espontaneas", "seguimiento", "email"]
+    # 1. Gmail: el servidor entero ya no se permite nunca; solo herramientas sueltas
+    for f in fases:
+        for pr in (True, False):
+            for e in (None, "borrador", "auto"):
+                ok, no = sets(f, pr, e)
+                assert "mcp__claude_ai_Gmail" not in ok and not ok & no, (f, pr, e)
+                assert {"AskUserQuestion", "PowerShell", "NotebookEdit"} <= no, (f, pr)
+                escritas = {h for h in GMAIL_ESCRITURA if g + h in ok}
+                assert {g + h for h in GMAIL_ESCRITURA if h not in escritas} <= no
+                if pr:   # prueba: ni una escritura, lectura intacta, candidaturas y archivos reales prohibidos
+                    assert not escritas and {g + h for h in GMAIL_LECTURA} <= ok, (f, e)
+                    assert "Bash(python -m candidaturas:*)" in no and not any("candidaturas" in x for x in ok)
+                    assert all(f"{t}(//**/{r})" in no for r in REALES for t in ("Edit", "Write"))
+                    assert {"data/empresas.csv", "config/**", "cv/**", "candidaturas-sync/**"} <= set(REALES)
+                else:
+                    assert "Bash(python -m candidaturas:*)" in ok
+                    assert not any(x.startswith(("Edit(//", "Write(//")) for x in no)
+    esperado = {"buscar": set(), "adaptar": set(), "postular": set(), "seguimiento": set(), "email": {"send_message"}}
+    for f, w in esperado.items():
+        assert {h for h in GMAIL_ESCRITURA if g + h in sets(f, False)[0]} == w, f
+    assert not {g + h for h in GMAIL_LECTURA} & sets("email", False)[0]          # el email solo envía
+    for e, w in ((None, {"create_draft"}), ("borrador", {"create_draft"}),
+                 ("auto", {"create_draft", "send_message", "label_message", "create_label"})):
+        assert {h for h in GMAIL_ESCRITURA if g + h in sets("espontaneas", False, e)[0]} == w, e
+    # Hook src.guardia: lo que los permisos no ven (argumentos)
+    env = lambda **k: {"JOB_AGENTS_FASE": "email", "JOB_AGENTS_DESTINO": "yo@ejemplo.es", **k}
+    assert motivo(g + "send_message", {"to": ["Yo@Ejemplo.es"]}, env()) is None
+    for entrada in ({"to": ["otro@ejemplo.es"]}, {"to": ["yo@ejemplo.es", "otro@x.es"]},
+                    {"to": ["yo@ejemplo.es"], "bcc": ["o@x.es"]}, {"to": ["yo@ejemplo.es"], "cc": ["o@x.es"]},
+                    {"draftId": "r1"}, {}):
+        assert motivo(g + "send_message", entrada, env()), entrada
+    assert motivo(g + "send_message", {"to": ["yo@ejemplo.es"]}, env(JOB_AGENTS_DESTINO=""))   # sin destino validado
+    for f in ("buscar", "adaptar", "postular", "seguimiento"):
+        assert motivo(g + "send_message", {"to": ["yo@ejemplo.es"]}, env(JOB_AGENTS_FASE=f)), f
+    for h in ("create_draft", "send_message", "label_message", "label_thread", "create_label"):
+        assert motivo(g + h, {"to": ["yo@ejemplo.es"]}, env(JOB_AGENTS_PRUEBA="1", JOB_AGENTS_FASE="espontaneas")), h
+    assert motivo(g + "search_threads", {}, env(JOB_AGENTS_PRUEBA="1")) is None
+    assert motivo(g + "send_message", {"to": ["a@b.es"]}, {}) is None       # fuera del orquestador no actúa
+    r = subprocess.run([sys.executable, "-m", "src.guardia"], input="no json", capture_output=True, text=True,
+                       cwd=db.RAIZ, env={**os.environ, "JOB_AGENTS_FASE": "email"})
+    assert r.returncode == 2 and "ilegible" in r.stderr, r
+    # El orquestador pasa el hook, la fase y el destinatario validado; sin destinatario válido no lanza el email
+    falso = claude_falso()
+    path, os.environ["PATH"] = os.environ["PATH"], f"{falso}{os.pathsep}{os.environ['PATH']}"
+    try:
+        d = Diario(Namespace(prueba=False, simular=False, timeout=60, fases=["resumen"], origen_db=db.RAIZ,
+                             lote=1, max_ofertas=None))
+        d.pendientes = lambda: {"enviadas_hoy": [], "espontaneas_hoy": []}
+        for email, lanza in (("yo@ejemplo.es", True), ("yo@ejemplo.es, otro@x.es", False), ("", False)):
+            (falso / "llamadas.jsonl").unlink(missing_ok=True)
+            d.fases, d.parar = [], False
+            respuestas = {"modo": '{"portales": "auto", "espontaneas": "auto", "prueba": false}',
+                          "perfil-formulario": json.dumps({"candidato": {"email": email}}), "excel": "", "resumen": "r"}
+            d.cli = lambda *a, r=respuestas: r[a[0]]
+            d.resumen()
+            ll = [json.loads(l) for l in (falso / "llamadas.jsonl").read_text(encoding="utf-8").splitlines()] \
+                if (falso / "llamadas.jsonl").exists() else []
+            assert len(ll) == int(lanza), (email, ll, d.fases)
+            if lanza:
+                a = ll[0]["argv"]
+                assert a[a.index("--settings") + 1] == "src/guardia.json", a
+                assert g + "send_message" in a[a.index("--allowedTools") + 1]
+                assert "yo@ejemplo.es" in (d.dir_logs / "email_resumen.md").read_text(encoding="utf-8")
+            else:
+                assert d.fases[-1]["estado"] == "error" and "destinatario" in d.fases[-1]["detalle"], d.fases
+        # Con el modo roto tampoco
+        (falso / "llamadas.jsonl").unlink(missing_ok=True)
+        d.cli = lambda *a: (_ for _ in ()).throw(RuntimeError("perfil roto")) if a[0] == "modo" else "r"
+        d.fases = []
+        d.resumen()
+        assert not (falso / "llamadas.jsonl").exists() and d.fases[-1]["estado"] == "error", d.fases
+    finally:
+        os.environ["PATH"] = path
+    # 4. cv base se niega en prueba (antes de tocar cv/)
+    cvdir = db.RAIZ / "cv"
+    antes = sorted((str(p), p.stat().st_mtime_ns) for p in cvdir.rglob("*"))
+    out = cli("cv", "base", prueba=True, base=base_sintetica(), ok=False)
+    assert "no se ejecuta en modo prueba" in out, out
+    assert sorted((str(p), p.stat().st_mtime_ns) for p in cvdir.rglob("*")) == antes
+    # ya_postuladas(): ausente, corrupto, sin hoja o sin columnas -> error, nunca vacío
+    from openpyxl import Workbook
+    tmp = Path(tempfile.mkdtemp())
+    bueno, roto, sin_hoja, sin_col = tmp / "c.xlsx", tmp / "roto.xlsx", tmp / "h.xlsx", tmp / "col.xlsx"
+    wb = Workbook(); ws = wb.active; ws.title = "Candidaturas"
+    ws.append(["Empresa", "Puesto", "Ref"]); ws.append(["Acme", "Front", "li:9"]); wb.save(bueno)
+    roto.write_text("no es un xlsx", encoding="utf-8")
+    wb = Workbook(); wb.active.title = "Otra"; wb.save(sin_hoja)
+    wb = Workbook(); ws = wb.active; ws.title = "Candidaturas"; ws.append(["Empresa"]); wb.save(sin_col)
+    original = climod.ruta_candidaturas
+    try:
+        climod.ruta_candidaturas = lambda: bueno
+        claves, ids = climod.ya_postuladas()
+        assert ids == {"li:9"} and len(claves) == 1
+        for ruta, texto in ((tmp / "no.xlsx", "No existe"), (roto, "No se puede leer"), (sin_hoja, "No se puede leer"),
+                            (sin_col, "No se puede leer")):
+            climod.ruta_candidaturas = lambda r=ruta: r
+            try:
+                climod.ya_postuladas()
+                raise AssertionError(f"ya_postuladas aceptó {ruta.name}")
+            except SystemExit as e:
+                assert texto in str(e) and "Nada filtrado" in str(e), e
+        climod.ruta_candidaturas = lambda: None          # sin candidaturas_sync: no hay nada que comprobar
+        assert climod.ya_postuladas() == (set(), set())
+    finally:
+        climod.ruta_candidaturas = original
+    # AskUserQuestion: prohibida en todas las sesiones y espontáneas sabe qué hacer en su lugar
+    esp = (db.RAIZ / ".claude" / "agents" / "espontaneas.md").read_text(encoding="utf-8")
+    assert "nunca uses `AskUserQuestion`" in esp and "salta esa empresa" in esp
+    assert "Si `filtrar` falla" in (db.RAIZ / ".claude" / "agents" / "buscador.md").read_text(encoding="utf-8")
+    print("Seguridad V1-V4, ya_postuladas y AskUserQuestion OK (simulada)")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -463,3 +584,4 @@ if __name__ == "__main__":
     d1_correo(base)
     estado_fase()
     consulta_lectura()
+    seguridad_v()

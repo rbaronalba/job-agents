@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1
 
 - Ensayo sin riesgo: `python -m src.diario --prueba --max-ofertas 1` trabaja sobre una copia del histórico en `data/tmp/prueba/`, rellena sin enviar, no crea borradores ni envía nada por Gmail (solo lectura) y no manda el email de resumen. Los permisos de cada sesión lo imponen: en prueba no se pueden escribir `config/`, `cv/`, `data/empresas.csv`, el histórico real ni `candidaturas-sync/`, ni ejecutar `python -m candidaturas`. `--simular` solo muestra qué fases y lotes se lanzarían.
 - Consumo real de tokens: `python -m src.consumo cargar` y `python -m src.consumo informe` (lee los transcripts de Claude Code).
-- Pruebas: `python -m src.test_optim`.
+- Pruebas: `python -m src.test_optim`. Pruebas de seguridad con sesiones reales de Claude (cuestan unos céntimos, en una carpeta temporal con archivos centinela; nunca crean borradores ni envían): `python -m src.test_seguridad`.
 
 ## Seguridad y datos personales
 
