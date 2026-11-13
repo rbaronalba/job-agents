@@ -15,7 +15,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 from . import db
 
-CARPETA = db.RAIZ / "data" / "ofertas"
+CARPETA = db.EXCEL  # en modo prueba, data/tmp/prueba/ofertas: nunca se pisa el Excel real
 HOJA = "Ofertas"
 # (cabecera, campo en SQLite o None si se calcula, ancho)
 COLUMNAS = [

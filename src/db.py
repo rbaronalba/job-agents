@@ -1,7 +1,9 @@
 """Histórico de ofertas en SQLite: deduplicación entre portales y estado de cada oferta."""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import sqlite3
 import unicodedata
@@ -9,7 +11,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-RUTA = RAIZ / "data" / "historico.sqlite"
+RUTA_REAL = RAIZ / "data" / "historico.sqlite"
+# JOB_AGENTS_DB: usar otra base (copia para ensayos). JOB_AGENTS_PRUEBA=1: modo prueba, nunca envía ni toca datos reales.
+RUTA = Path(os.environ["JOB_AGENTS_DB"]).resolve() if os.environ.get("JOB_AGENTS_DB") else RUTA_REAL
+PRUEBA = os.environ.get("JOB_AGENTS_PRUEBA") == "1"
+# En prueba, todo lo que se escribe (Excel, CVs, logs, CSV de espontáneas) va a data/tmp/prueba/
+_DATOS = RAIZ / "data" / "tmp" / "prueba" if PRUEBA else None
+OUTPUT = _DATOS / "output" if PRUEBA else RAIZ / "output"
+LOGS = _DATOS / "logs" if PRUEBA else RAIZ / "logs"
+EXCEL = _DATOS / "ofertas" if PRUEBA else RAIZ / "data" / "ofertas"
+EMPRESAS = _DATOS / "empresas.csv" if PRUEBA else RAIZ / "data" / "empresas.csv"
 
 ESTADOS = ["nueva", "cv_adaptado", "pendiente_revision", "enviada", "descartada"]
 
@@ -57,7 +68,10 @@ def semana(d: date | None = None) -> str:
     return f"{y}-W{w:02d}"
 
 
-def conectar(ruta: Path = RUTA) -> sqlite3.Connection:
+def conectar(ruta: Path | None = None) -> sqlite3.Connection:
+    ruta = ruta or RUTA
+    if PRUEBA and ruta.resolve() == RUTA_REAL.resolve():
+        raise SystemExit("Modo prueba sin JOB_AGENTS_DB: no se toca el histórico real. Apunta JOB_AGENTS_DB a una copia.")
     ruta.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(ruta)
     con.row_factory = sqlite3.Row
@@ -118,9 +132,27 @@ def guardar(con, oferta: dict) -> tuple[str, bool]:
     return oid, True
 
 
+HUELLA_CAMPOS = "id, estado, encaje, justificacion, notas, enviada, clave, portales, urls, ids_externos"
+
+
+def huella(ruta: Path | None = None) -> dict:
+    """Huella de solo lectura del histórico: si no cambia, no se ha perdido ni alterado ninguna oferta."""
+    con = sqlite3.connect(f"file:{(ruta or RUTA).as_posix()}?mode=ro", uri=True)
+    filas = con.execute(f"SELECT {HUELLA_CAMPOS} FROM ofertas ORDER BY id").fetchall()
+    return {
+        "ruta": str(ruta or RUTA),
+        "integridad": con.execute("PRAGMA integrity_check").fetchone()[0],
+        "total": len(filas),
+        "por_estado": dict(con.execute("SELECT estado, COUNT(*) FROM ofertas GROUP BY estado ORDER BY estado").fetchall()),
+        "sha256": hashlib.sha256(json.dumps(filas, ensure_ascii=False).encode()).hexdigest()[:16],
+    }
+
+
 def cambiar_estado(con, oid: str, estado: str, nota: str | None = None):
     if estado not in ESTADOS:
         raise ValueError(f"Estado no válido: {estado}. Usa uno de {ESTADOS}")
+    if PRUEBA and estado == "enviada":
+        raise SystemExit("Modo prueba: nunca se envía, así que no se puede marcar ninguna oferta como enviada.")
     fila = con.execute("SELECT notas FROM ofertas WHERE id = ?", (oid,)).fetchone()
     if not fila:
         raise ValueError(f"No existe la oferta {oid}")

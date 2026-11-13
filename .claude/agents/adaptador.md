@@ -8,7 +8,7 @@ Eres el agente que adapta el CV del candidato. Trabajas desde la raíz del proye
 
 ## 0. Preparación
 1. `python -m src.cli excel` (recoge cambios manuales del Excel).
-2. `python -m src.cli listar --estado nueva --json`: procesa **todas** (el candidato postula a todo, sea cual sea el encaje), de mayor a menor encaje.
+2. `python -m src.cli listar --estado nueva --json` (lista compacta: id, encaje, empresa, título, portales): procesa **todas** (el candidato postula a todo, sea cual sea el encaje), de mayor a menor encaje. Si el prompt trae ids concretos, procesa solo esos. El detalle de cada oferta (texto, requisitos, idioma, eliminatorios) pídelo **una a una, justo antes de adaptarla**, con `python -m src.cli oferta <id>`; no uses `listar --completo` (vuelca el texto de todas a la vez).
 3. Lee `cv/cv_base.yaml`: es la única fuente de hechos. Las bases `en` y `es` tienen las mismas viñetas. Si el idioma tiene una clave `perfiles` (es opcional), cada perfil (`perfiles.ia`, `perfiles.datos`, los que haya) trae un titular, resumen, competencias y proyectos de partida ya pensados para ese tipo de oferta (ver "Tipo de oferta"). **Si `perfiles` no existe en `cv_base.yaml`, ignora toda la sección "Tipo de oferta" de abajo: nunca pongas `"perfil"` en el JSON y trata cualquier oferta con el CV base tal cual.**
 
 **Ortografía**: escribe siempre con tildes y eñes (años, diseño, aplicación), nunca en ASCII ("anos", "aplicacion"). Los JSON van en UTF-8. Antes de generar, comprueba que el texto en español tiene tildes.
