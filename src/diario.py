@@ -40,6 +40,9 @@ GMAIL_ESCRITURA = ["create_draft", "update_draft", "delete_draft", "send_message
                    "untrash_thread", "mark_message_spam", "mark_thread_spam", "unmark_message_spam",
                    "unmark_thread_spam", "apply_sensitive_message_label", "apply_sensitive_thread_label",
                    "download_gmail_attachment"]
+# Archivos reales que ninguna sesión de prueba puede modificar, estén donde estén (también el checkout principal
+# visto desde un worktree). Las reglas Edit cubren Write, Edit y NotebookEdit; Bash solo admite src.cli, cd y mkdir.
+REALES = ["data/empresas.csv", "data/historico.sqlite", "config/**", "cv/**", "candidaturas-sync/**"]
 
 
 def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[str, str]:
@@ -56,8 +59,10 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
     lectura = [] if fase == "email" and not prueba else GMAIL_LECTURA
     permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura)]
     prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
+    prohibidas += ["PowerShell", "NotebookEdit"]   # otras vías de escritura en disco que el orquestador no usa
     if prueba:
         prohibidas.append("Bash(python -m candidaturas:*)")   # escribe en el candidaturas.xlsx real
+        prohibidas += [f"{t}(//**/{r})" for r in REALES for t in ("Edit", "Write")]
     else:
         permitidas.append("Bash(python -m candidaturas:*)")
     if fase == "postular":

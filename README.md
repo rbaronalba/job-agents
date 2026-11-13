@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1
 
 **Modo por fases (menos tokens).** `python -m src.diario` hace lo mismo que `/diario`, pero con una sesión de Claude por fase (y por lote de 5 ofertas al postular), de modo que el contexto de una fase no se arrastra a la siguiente, y sin arrancar las fases que no tienen trabajo. `diario.bat` lo usa solo si existe la variable de entorno `JOB_AGENTS_DIARIO=nuevo`.
 
-- Ensayo sin riesgo: `python -m src.diario --prueba --max-ofertas 1` trabaja sobre una copia del histórico en `data/tmp/prueba/`, rellena sin enviar, deja las espontáneas en borrador y no manda el email de resumen. `--simular` solo muestra qué fases y lotes se lanzarían.
+- Ensayo sin riesgo: `python -m src.diario --prueba --max-ofertas 1` trabaja sobre una copia del histórico en `data/tmp/prueba/`, rellena sin enviar, no crea borradores ni envía nada por Gmail (solo lectura) y no manda el email de resumen. Los permisos de cada sesión lo imponen: en prueba no se pueden escribir `config/`, `cv/`, `data/empresas.csv`, el histórico real ni `candidaturas-sync/`, ni ejecutar `python -m candidaturas`. `--simular` solo muestra qué fases y lotes se lanzarían.
 - Consumo real de tokens: `python -m src.consumo cargar` y `python -m src.consumo informe` (lee los transcripts de Claude Code).
 - Pruebas: `python -m src.test_optim`.
 
