@@ -6,6 +6,12 @@
 !/.gitattributes
 !/README.md
 !/requirements.txt
+!/requirements.lock
+!/LICENSE
+!/SECURITY.md
+!/THREAT_MODEL.md
+
+!/.github/
 !/.env.example
 !/diario.bat
 !/instalar_tarea.ps1
