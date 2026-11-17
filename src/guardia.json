@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__claude_ai_Gmail__.*",
+        "matcher": "mcp__claude_ai_Gmail__.*|mcp__claude_ai_Composio__.*|mcp__claude-in-chrome__.*|WebFetch",
         "hooks": [{"type": "command", "command": "python -m src.guardia"}]
       }
     ]

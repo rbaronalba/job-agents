@@ -3,7 +3,9 @@
   python -m src.diario [--fases buscar,adaptar,...] [--lote 5] [--max-ofertas N] [--prueba] [--simular]
 
 Fases, en orden: buscar, adaptar, postular (lotes de --lote ofertas, una sesión por lote), espontaneas,
-seguimiento (candidaturas-sync), resumen (Excel, resumen y email). Antes de cada fase se consulta
+seguimiento (candidaturas-sync), contactos (resultados al histórico + persona y nota de LinkedIn para las enviadas
+con encaje alto, y seguimiento a los 12 días; solo lectura en Chrome, envía el candidato), post (borrador de post de
+LinkedIn cada linkedin_posts.cada_dias), resumen (Excel, resumen y email). Antes de cada fase se consulta
 `src.cli pendientes`: si no hay trabajo, la fase no arranca. Si una fase choca con el límite de uso,
 no se lanzan las siguientes. Cada resultado (JSON de `claude -p`) queda en logs/diario/<fecha>/.
 
@@ -25,12 +27,14 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from . import db
+from . import db, guardia
 
-FASES = ["buscar", "adaptar", "postular", "espontaneas", "seguimiento", "resumen"]
+FASES = ["buscar", "adaptar", "postular", "espontaneas", "seguimiento", "contactos", "post", "resumen"]
 # Las mismas herramientas que permitía diario.bat para la sesión única, salvo Gmail y candidaturas (ver permisos())
-HERRAMIENTAS = ("Read,Write,Edit,Glob,Grep,ToolSearch,Agent,Task,WebSearch,WebFetch,mcp__claude-in-chrome,"
-                "mcp__claude_ai_Composio,Bash(python -m src.cli:*),Bash(cd:*),Bash(mkdir:*)")
+HERRAMIENTAS = ("Read,Write,Edit,Glob,Grep,ToolSearch,Agent,Task,mcp__claude-in-chrome,"
+                "Bash(python -m src.cli:*),Bash(cd:*),Bash(mkdir:*)")
+# Mínimo privilegio por fase: Composio (puede enviar correo) solo busca; la web abierta solo las espontáneas
+WEB, COMPOSIO = "WebSearch,WebFetch", "mcp__claude_ai_Composio"
 _GMAIL = "mcp__claude_ai_Gmail__"
 GMAIL_LECTURA = ["search_threads", "get_thread", "get_message", "list_drafts", "get_draft", "list_labels"]
 # Todo lo que escribe en la cuenta (o en disco, como la descarga de adjuntos): denegado salvo lo que la fase necesite
@@ -45,7 +49,7 @@ GMAIL_ESCRITURA = ["create_draft", "update_draft", "delete_draft", "send_message
 REALES = ["data/empresas.csv", "data/historico.sqlite", "config/**", "cv/**", "candidaturas-sync/**"]
 
 
-def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[str, str]:
+def permisos(fase: str, prueba: bool, espontaneas: str | None = None, dominios: tuple = ()) -> tuple[str, str]:
     """(--allowedTools, --disallowedTools) de una fase. Las prohibiciones valen también para sus subagentes."""
     if prueba:
         escritura = []
@@ -57,8 +61,12 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
     else:   # buscar, adaptar, postular, seguimiento: solo lectura
         escritura = []
     lectura = [] if fase == "email" and not prueba else GMAIL_LECTURA
-    permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura)]
+    permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura), *(f"ClaudeInChromeDomain({d})" for d in dominios)]
     prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
+    permitidas += [COMPOSIO] if fase == "buscar" else []
+    permitidas += [WEB] if fase == "espontaneas" else []
+    prohibidas += [] if fase == "buscar" else [COMPOSIO]
+    prohibidas += [] if fase == "espontaneas" else WEB.split(",")
     prohibidas += ["PowerShell", "NotebookEdit"]   # otras vías de escritura en disco que el orquestador no usa
     prohibidas.append("AskUserQuestion")           # nadie responde: la sesión no puede quedarse esperando
     if prueba:
@@ -68,6 +76,8 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[s
         permitidas.append("Bash(python -m candidaturas:*)")
     if fase == "postular":
         prohibidas.append(SIN_PERFIL)
+    if fase in ("contactos", "post"):   # solo leer LinkedIn: sin clics, formularios ni subidas (nada de conectar ni mensajes)
+        prohibidas += [f"mcp__claude-in-chrome__{h}" for h in ("computer", "form_input", "file_upload")]
     return ",".join(permitidas), ",".join(prohibidas)
 
 
@@ -134,9 +144,9 @@ class Diario:
         print(f"[{datetime.now():%H:%M:%S}] {fase:12} {estado:10} {detalle[:150]}", flush=True)
 
     def claude(self, fase: str, prompt: str, chrome=False, cwd: Path | None = None, espontaneas: str | None = None,
-               destino: str | None = None) -> dict:
+               destino: str | None = None, dominios: tuple = ()) -> dict:
         prompt = _seguro(f"{prompt} {DESATENDIDA}{PRUEBA if self.a.prueba else ''}")
-        permitidas, prohibidas = permisos(fase, self.a.prueba, espontaneas)
+        permitidas, prohibidas = permisos(fase, self.a.prueba, espontaneas, dominios)
         # GUARDIA: hook src.guardia, que mira los argumentos de Gmail (destinatario del resumen; nada en prueba)
         cmd = [shutil.which("claude") or "claude", "-p", prompt, "--output-format", "json", "--settings", GUARDIA,
                "--allowedTools", _seguro(permitidas), "--disallowedTools", _seguro(prohibidas)] \
@@ -232,7 +242,9 @@ class Diario:
                     self.registrar("postular", "vacia", f"{motivo} ({len(p['cv_adaptado'])} en cola, cupo {p['cupo_portales']})")
                 return
             intentadas += lote
-            if self.claude("postular", "/postular " + " ".join(lote), chrome=True)["estado"] in ("error", "timeout"):
+            # Chrome solo entra en los dominios de las ofertas de este lote (más los fijos de settings.json)
+            hosts = tuple(sorted(guardia.hosts_de_ofertas(lote, self.env)))
+            if self.claude("postular", "/postular " + " ".join(lote), chrome=True, dominios=hosts)["estado"] in ("error", "timeout"):
                 return   # una tanda fallida (p. ej. modo o preparar fallaron) detiene la fase: no se lanzan más lotes
 
     def espontaneas(self):
@@ -262,6 +274,31 @@ class Diario:
                     f"(lee antes {c}/CLAUDE.md). Ejecuta sus comandos python -m candidaturas desde esa carpeta "
                     f"(cd {c} y despues el comando). Toda operacion de Gmail (buscar o leer hilos) pidesela al subagente "
                     "correo con la consulta exacta y los campos que necesites: tu no tienes Gmail.")
+
+    def contactos(self):
+        if not self.activa("contactos"):
+            return
+        try:   # respuestas y silencios al histórico antes de decidir a quién escribir
+            self.cli("resultados", *(["--simular"] if self.a.simular else []))
+        except RuntimeError as e:
+            self.registrar("contactos", "error", f"resultados: {e}")
+        p = self.pendientes()["contactos"]
+        if not (p["contactar"] or p["seguir"]):
+            return self.registrar("contactos", "vacia", "nadie a quien contactar ni seguimientos")
+        if not self.chrome:
+            return self.registrar("contactos", "omitida", "Chrome no disponible")
+        self.claude("contactos", "/contactos", chrome=True)
+
+    def post(self):
+        if not self.activa("post"):
+            return
+        from .cli import perfil
+        dias = (perfil().get("linkedin_posts") or {}).get("cada_dias", 10)
+        # En prueba db.OUTPUT es desechable y siempre se lanza /post (comportamiento previo, ahora legible)
+        ultimo = 0 if self.a.prueba else max((f.stat().st_mtime for f in (db.OUTPUT / "posts").glob("*.md")), default=0)
+        if time.time() - ultimo < dias * 86400:
+            return self.registrar("post", "vacia", f"ya hay un borrador de hace menos de {dias} días")
+        self.claude("post", "/post")
 
     def resumen(self):
         if "resumen" not in self.a.fases:
@@ -298,6 +335,8 @@ class Diario:
             "espontáneas enviadas (empresa), respuestas recibidas de empresas, pendientes que necesitan al candidato "
             "(pregunta o motivo) y errores.", "", "## Resumen", texto,
             "## Enviadas hoy por portales", *p["enviadas_hoy"], "## Espontáneas de hoy", *p["espontaneas_hoy"],
+            "## Contactos de LinkedIn para enviar a mano (va completo DESPUÉS de las 15 líneas: persona, enlace y "
+            "texto literal; 'seguimiento' si lo hay, si no 'nota_contacto')", self.cli("contactos", "--hoy"),
             "## Resultado de cada fase", *(f"- {f['fase']} ({f['estado']}): {f.get('texto', f['detalle'])[-800:]}" for f in self.fases),
         ]), encoding="utf-8")
         ruta = _seguro(datos.relative_to(db.RAIZ).as_posix())
@@ -305,7 +344,8 @@ class Diario:
                     "(operacion enviar, resumen diario): tu no tienes Gmail.", destino=destino)
 
     def ejecutar(self) -> int:
-        for fase in (self.buscar, self.adaptar, self.postular, self.espontaneas, self.seguimiento, self.resumen):
+        for fase in (self.buscar, self.adaptar, self.postular, self.espontaneas, self.seguimiento, self.contactos,
+                     self.post, self.resumen):
             try:
                 fase()
             except Exception as e:   # una fase rota no tumba las demás (como en /diario)
