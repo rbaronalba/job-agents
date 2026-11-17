@@ -5,12 +5,12 @@
 #
 # Estructura: "contacto" es único; "es" y "en" son el mismo CV en cada idioma (mismos hechos,
 # redactados en su idioma). Si solo trabajas en un idioma, borra el bloque que no uses y quita su
-# referencia de src/cli.py (cmd_cv) y .claude/agents/espontaneas.md.
+# mención en perfiles_cv (config/profile.yaml). `cv base` genera un CV fijo por idioma y por clave de `perfiles`.
 #
 # "perfiles" es OPCIONAL: solo hace falta si, además de tu perfil principal, quieres poder adaptar
 # el CV a un segundo tipo de oferta muy distinto (p. ej. tu perfil es frontend pero también postulas
 # a datos). Si no lo necesitas, borra la clave "perfiles" entera (en los dos idiomas) y dile al
-# agente `adaptador` que no hay perfiles secundarios.
+# `perfiles_cv` de config/profile.yaml.
 
 contacto:
   nombre: Nombre Apellidos

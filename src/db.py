@@ -22,12 +22,17 @@ LOGS = _DATOS / "logs" if PRUEBA else RAIZ / "logs"
 EXCEL = _DATOS / "ofertas" if PRUEBA else RAIZ / "data" / "ofertas"
 EMPRESAS = _DATOS / "empresas.csv" if PRUEBA else RAIZ / "data" / "empresas.csv"
 
-ESTADOS = ["nueva", "cv_adaptado", "pendiente_revision", "enviada", "descartada"]
+ESTADOS = ["nueva", "cv_adaptado", "pendiente_revision", "enviada", "descartada",
+           "respuesta", "entrevista", "rechazo", "silencio_14d"]   # los 4 últimos: resultado tras enviar (src.cli resultados)
+# Avance de una candidatura enviada: la sincronización solo mueve hacia delante (rechazo es final)
+RESULTADO = {"enviada": 0, "silencio_14d": 1, "respuesta": 2, "entrevista": 3, "rechazo": 4}
 
 # Columnas que el buscador rellena (todas texto salvo encaje)
 CAMPOS = ["empresa", "titulo", "ubicacion", "modalidad", "salario", "fecha_pub", "texto", "requisitos",
           "idioma", "tipo_candidatura", "encaje", "justificacion", "eliminatorios", "categoria",
           "carencias", "coincidencia_kw", "notas"]
+# Contacto humano tras postular (fase contactos): no los rellena el buscador
+CONTACTO = ["contacto", "nota_contacto", "seguimiento", "contacto_fecha"]
 
 ESQUEMA = f"""
 CREATE TABLE IF NOT EXISTS ofertas (
@@ -41,7 +46,8 @@ CREATE TABLE IF NOT EXISTS ofertas (
   semana TEXT NOT NULL,
   creada TEXT NOT NULL,
   actualizada TEXT NOT NULL,
-  enviada TEXT
+  enviada TEXT,
+  {", ".join(f"{c} TEXT" for c in CONTACTO)}
 );
 """
 
@@ -76,7 +82,26 @@ def conectar(ruta: Path | None = None) -> sqlite3.Connection:
     con = sqlite3.connect(ruta)
     con.row_factory = sqlite3.Row
     con.executescript(ESQUEMA)
+    hay = {r[1] for r in con.execute("PRAGMA table_info(ofertas)")}
+    for c in CONTACTO:   # migración de bases anteriores
+        if c not in hay:
+            con.execute(f"ALTER TABLE ofertas ADD COLUMN {c} TEXT")
     return con
+
+
+# Puestos a los que no se postula: Senior. Java/.NET/C# y los años pedidos ya NO excluyen (Rubén, 2026-11-17)
+TITULO_FUERA = re.compile(r"\bsenior\b|\bsr\b", re.I)
+
+
+def motivo_filtro(o, minimo: int) -> str | None:
+    """Por qué una oferta no merece candidatura, o None. Sin encaje (alertas sin texto) no se filtra por encaje."""
+    if TITULO_FUERA.search(o["titulo"] or ""):
+        return "puesto Senior"
+    if (o["eliminatorios"] or "").strip():
+        return f"eliminatorio: {o['eliminatorios']}"
+    if o["encaje"] is not None and o["encaje"] < minimo:
+        return f"encaje {o['encaje']} < {minimo}"
+    return None
 
 
 def _unir(lista_json: str, nuevos) -> str:
@@ -93,7 +118,8 @@ def buscar(con, oferta: dict) -> sqlite3.Row | None:
     if fila:
         return fila
     for ext in oferta.get("ids_externos") or []:
-        fila = con.execute("SELECT * FROM ofertas WHERE ids_externos LIKE ?", (f'%"{ext}"%',)).fetchone()
+        # instr, no LIKE: '%' y '_' del id no pueden actuar de comodín y unir ofertas distintas
+        fila = con.execute("SELECT * FROM ofertas WHERE instr(ids_externos, ?) > 0", (f'"{ext}"',)).fetchone()
         if fila:
             return fila
     return None
@@ -183,4 +209,13 @@ if __name__ == "__main__":
     con.execute("DELETE FROM ofertas WHERE id = ?", (d,))
     g, nueva = guardar(con, {"empresa": "Hueco", "titulo": "Tres"})
     assert nueva and g > e, (d, e, g)
+    f = {"titulo": "Senior Angular Dev", "eliminatorios": "", "encaje": 90}
+    assert motivo_filtro(f, 55) == "puesto Senior"
+    assert motivo_filtro({**f, "titulo": "JavaScript Developer"}, 55) is None
+    assert motivo_filtro({**f, "titulo": "Full Stack Java & Angular"}, 55) is None
+    assert motivo_filtro({**f, "titulo": ".NET + Angular"}, 55) is None
+    assert motivo_filtro({**f, "titulo": "Frontend", "eliminatorios": "presencial fuera"}, 55).startswith("eliminatorio")
+    assert motivo_filtro({**f, "titulo": "Frontend", "encaje": 50}, 55) == "encaje 50 < 55"
+    assert motivo_filtro({**f, "titulo": "Frontend", "encaje": None}, 55) is None
+    assert "contacto_fecha" in {r[1] for r in con.execute("PRAGMA table_info(ofertas)")}
     print("db.py OK")

@@ -12,9 +12,15 @@
   excel       Importa cambios manuales del Excel semanal y lo regenera
   resumen     Resumen de la ejecución (consola y logs/)
   espontaneas-consulta  Solo lectura: CSV de espontáneas y coincidencias de una empresa en candidaturas.xlsx (JSON)
+  perfiles    Perfiles de candidatura (perfiles_cv): cuándo aplica cada uno, asunto y CV fijo (JSON)
+  espontaneas-informe  Solo lectura: envíos de espontáneas cruzados con respuestas del Excel, por categoría, destinatario, sector, tecnología y semana
   pendientes  Ofertas nuevas, CVs por enviar, envíos de hoy y cupos restantes (JSON)
   modo        Modos de envío efectivos (JOB_AGENTS_PRUEBA=1 fuerza revision/borrador) y rutas activas
   huella      Huella de solo lectura del histórico para comprobar que no se pierde ni cambia nada
+  depurar     Filtro de calidad sobre la cola: Senior, eliminatorios o encaje bajo pasan a descartada
+  resultados  Sincroniza respuestas/rechazos desde candidaturas.xlsx, marca silencios y muestra el embudo
+  contactos   Enviadas que necesitan contacto en LinkedIn o mensaje de seguimiento (JSON); --hoy: textos de hoy
+  contacto    Guarda persona, nota de conexión o seguimiento de una oferta (nunca envía nada)
 
 Variables de entorno: JOB_AGENTS_DB (usar otra base, p. ej. una copia) y JOB_AGENTS_PRUEBA=1 (ensayo:
 no envía, exige JOB_AGENTS_DB y escribe Excel, CVs, logs y CSV en data/tmp/prueba/).
@@ -23,13 +29,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
 
 import yaml
 
-from . import db
+from . import db, espont
 
 RAIZ = db.RAIZ
 
@@ -61,12 +68,22 @@ def leer_json(ruta: str):
     return datos if isinstance(datos, list) else [datos]
 
 
-def ruta_candidaturas() -> Path | None:
-    """Ruta del Excel de candidaturas-sync (según su config.toml), o None si candidaturas_sync no está configurado."""
+def carpeta_sync() -> Path | None:
+    """Carpeta de candidaturas-sync del perfil. Debe estar dentro del proyecto: de ella se importa y ejecuta código."""
     carpeta = perfil().get("candidaturas_sync")
     if not carpeta:
         return None
     raiz = (RAIZ / carpeta).resolve()
+    if not raiz.is_relative_to(RAIZ.resolve()):
+        raise SystemExit(f"candidaturas_sync debe estar dentro del proyecto, no en {raiz}")
+    return raiz
+
+
+def ruta_candidaturas() -> Path | None:
+    """Ruta del Excel de candidaturas-sync (según su config.toml), o None si candidaturas_sync no está configurado."""
+    raiz = carpeta_sync()
+    if raiz is None:
+        return None
     excel = raiz / "candidaturas.xlsx"
     cfg = raiz / "config.toml"
     if cfg.exists():
@@ -122,13 +139,23 @@ def cmd_filtrar(args):
                      ensure_ascii=False, indent=1))
 
 
+def minimo_postular(p: dict | None = None) -> int:
+    return ((p or perfil()).get("encaje") or {}).get("minimo_postular", 55)
+
+
 def cmd_guardar(args):
     con = db.conectar()
+    minimo = minimo_postular()
     res = {"nuevas": [], "fusionadas": []}
     for o in leer_json(args.archivo):
         if not o.get("empresa") or not o.get("titulo"):
             print(f"Ignorada (sin empresa o título): {o.get('urls')}", file=sys.stderr)
             continue
+        # Filtro de calidad solo al insertar: una oferta ya guardada conserva su estado
+        motivo = None if db.buscar(con, o) else db.motivo_filtro(
+            {"titulo": o.get("titulo"), "eliminatorios": o.get("eliminatorios"), "encaje": o.get("encaje")}, minimo)
+        if motivo and (o.get("estado") or "nueva") == "nueva":
+            o = {**o, "estado": "descartada", "notas": "; ".join(x for x in [o.get("notas"), f"Filtro: {motivo}"] if x)}
         oid, nueva = db.guardar(con, o)
         res["nuevas" if nueva else "fusionadas"].append(f"{oid} {o['empresa']} | {o['titulo']} ({o.get('encaje')})")
     con.commit()
@@ -189,11 +216,11 @@ def cmd_cv(args):
     if args.id == "base":
         if db.PRUEBA:   # reescribiría los PDF reales de cv/
             raise SystemExit("cv base no se ejecuta en modo prueba (JOB_AGENTS_PRUEBA=1): escribe en cv/ real")
-        # Modelos fijos que se adjuntan en las candidaturas espontáneas (el de frontend ya no se usa)
-        for idioma in ("es", "en"):
-            for perfil in ("ia", "datos"):
-                inf = cv.generar({"idioma": idioma, "perfil": perfil}, RAIZ / "cv" / perfil / idioma)
-                print(f"cv/{perfil}/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
+        # Modelos fijos que se adjuntan en las candidaturas espontáneas: uno por clave de `perfiles` de cv_base.yaml
+        base = yaml.safe_load(cv.BASE.read_text(encoding="utf-8"))
+        for carpeta, idioma in cv.cvs_fijos(base):
+            inf = cv.generar({"idioma": idioma, **({} if carpeta == "base" else {"perfil": carpeta})}, RAIZ / "cv" / carpeta / idioma)
+            print(f"cv/{carpeta}/{idioma}/{cv.nombre_pdf()}: {inf['paginas']} página(s)")
         return
     con = db.conectar()
     oferta = con.execute("SELECT semana, titulo FROM ofertas WHERE id = ?", (args.id,)).fetchone()
@@ -260,13 +287,12 @@ def cmd_perfil_formulario(args):
 def registrar_en_seguimiento(o, origen: str) -> str:
     """Añade la candidatura a candidaturas.xlsx (candidaturas-sync) cuando el portal no manda correo de confirmación."""
     import subprocess
-    carpeta = perfil().get("candidaturas_sync")
-    if not carpeta:
+    raiz = carpeta_sync()
+    if raiz is None:
         return "sin candidaturas_sync configurado"
-    raiz = (RAIZ / carpeta).resolve()
     url = (json.loads(o["urls"]) or [None])[0]
-    cmd = [sys.executable, "-m", "candidaturas", "nueva", "--empresa", o["empresa"], "--puesto", o["titulo"],
-           "--origen", origen, "--nota", f"Enviada por job-agents ({o['id']})"] + (["--enlace", url] if url else [])
+    cmd = [sys.executable, "-m", "candidaturas", "nueva", f"--empresa={o['empresa']}", f"--puesto={o['titulo']}",
+           f"--origen={origen}", f"--nota=Enviada por job-agents ({o['id']})"] + ([f"--enlace={url}"] if url else [])
     r = subprocess.run(cmd, cwd=raiz, capture_output=True, text=True, encoding="utf-8")
     return (r.stdout or r.stderr).strip()
 
@@ -308,6 +334,7 @@ def cmd_resumen(args):
         f"- CVs adaptados pendientes de enviar: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'cv_adaptado')}",
         f"- Pendientes de tu revisión: {q('SELECT COUNT(*) FROM ofertas WHERE estado = ?', 'pendiente_revision')}",
         f"- Candidaturas enviadas hoy: {q('SELECT COUNT(*) FROM ofertas WHERE enviada = ?', hoy)}",
+        "- Embudo total: " + ", ".join(f"{k} {v}" for k, v in embudo_total(con).items()),
     ]
     if args.errores:
         lineas.append(f"- Errores: {args.errores}")
@@ -349,6 +376,7 @@ def pendientes(con=None, p: dict | None = None) -> dict:
         "cupo_espontaneas": max(0, min(envio.get("espontaneas_objetivo_diario", 12), envio.get("espontaneas_max_diario", 15),
                                        total - len(enviadas)) - len(esp)),
         "candidaturas_sync": (p or perfil()).get("candidaturas_sync"),
+        "contactos": {k: [o["id"] for o in v] for k, v in contactos_pendientes(con, cfg_contactos(p)).items()},
         "prueba": db.PRUEBA,
     }
 
@@ -382,14 +410,73 @@ def cmd_espontaneas_consulta(args):
     if faltan:
         _fallo(f"al CSV {ruta_csv} le faltan columnas: {sorted(faltan)}")
     de_hoy = Counter(r["estado"] for r in filas if (r.get("fecha") or "").startswith(hoy) and r.get("estado") in ("enviada", "borrador"))
+    p = perfil()
+    envio = p.get("envio") or {}
+    avisos = [f"{r.get('empresa')}: {e}" for r in filas for e in espont.validar_fila(r)]
     salida = {"ok": True, "csv": {
         "ruta": str(ruta_csv), "filas": len(filas),
         "por_estado": dict(sorted(Counter((r.get("estado") or "") for r in filas).items())),
         "hoy": {"enviada": de_hoy["enviada"], "borrador": de_hoy["borrador"], "total": sum(de_hoy.values())},
+    }, "clasificacion": {   # aparte de "csv": su contenido es un contrato que otras pruebas comparan exacto
+        "por_categoria": dict(sorted(Counter((r.get("categoria") or "sin_clasificar") for r in filas).items())),
+        "retenidas_sin_evaluar": sum(1 for r in filas if r.get("estado") == "retenida" and not r.get("categoria")),
+        "cola": [r["empresa"] for r in espont.cola(filas, envio.get("espontaneas_anillos") or [],
+                                                     envio.get("espontaneas_anillo_actual", 0), db.norm)][:40],
+        "avisos": avisos[:20],
     }}
     if args.empresa or args.dominio:
         salida["candidaturas"] = _candidaturas_de(args)
     print(json.dumps(salida, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str))
+
+
+def cmd_perfiles(args):
+    """Solo lectura. Perfiles de candidatura (config/profile.yaml: perfiles_cv) y si su CV fijo existe en cada idioma."""
+    from . import cv
+    base = yaml.safe_load(cv.BASE.read_text(encoding="utf-8"))
+    perfiles, avisos = cv.perfiles_cv(perfil(), base)
+    for p in perfiles:
+        p["pdf"] = {i: len(list((RAIZ / p["carpeta"] / i).glob("*.pdf"))) == 1 for i in cv._idiomas(base)}
+        avisos += [f"{p['id']}: falta el PDF único en {p['carpeta']}/{i}/ (python -m src.cli cv base)"
+                   for i, ok in p["pdf"].items() if not ok]
+    print(json.dumps({"ok": True, "perfiles": perfiles, "avisos": avisos}, ensure_ascii=False, sort_keys=True))
+
+
+def cmd_espontaneas_informe(args):
+    """Solo lectura. Envíos de espontáneas (CSV) cruzados con el resultado del Excel (la única fuente de respuestas)."""
+    import csv
+    ruta_csv = Path(args.csv) if args.csv else db.EMPRESAS
+    if not ruta_csv.is_file():
+        _fallo(f"no existe el CSV de empresas: {ruta_csv}")
+    with open(ruta_csv, encoding="utf-8", newline="") as f:
+        filas = list(csv.DictReader(f))
+    resultados = None
+    ruta = Path(args.excel) if args.excel else ruta_candidaturas()
+    if ruta and ruta.is_file():
+        from openpyxl import load_workbook
+        wb = load_workbook(ruta, read_only=True, data_only=True)
+        try:
+            it = wb["Candidaturas"].iter_rows(values_only=True)
+            cab = [str(c or "") for c in next(it)]
+            xl = [dict(zip(cab, r)) for r in it]
+        finally:
+            wb.close()
+        orden = {"entrevista": 3, "respuesta": 2, "rechazo": 1, None: 0}
+        por_clave = {}
+        for r in xl:
+            if "espont" in str(r.get("Puesto") or "").lower():
+                k = db.clave(str(r.get("Empresa") or ""), "").split("|")[0]
+                res = resultado_de(r.get("Fase"), r.get("Notas"))
+                if orden[res] >= orden[por_clave.get(k)]:
+                    por_clave[k] = res
+        resultados = {}
+        for f in filas:
+            k = db.clave(f.get("empresa") or "", "").split("|")[0]
+            for otra, res in por_clave.items():
+                if k and k == otra:   # exacta: por subcadena, 'acme' y 'acmesoft' se confundían
+                    if orden[res] >= orden[resultados.get(f["empresa"])]:
+                        resultados[f["empresa"]] = res
+    inf = espont.informe(filas, resultados)
+    print(json.dumps(inf, ensure_ascii=False, sort_keys=True) if args.json else espont.texto(inf))
 
 
 def _candidaturas_de(args) -> dict:
@@ -427,6 +514,203 @@ def _candidaturas_de(args) -> dict:
         wb.close()
     return {"configurado": True, "ruta": str(ruta), "filas": max(n - 1, 0), "contactada": bool(coincidencias),
             "coincidencias": coincidencias}
+
+
+def cmd_depurar(args):
+    """Aplica el filtro de calidad a las ofertas nuevas: lo que no pasa queda descartada con el motivo.
+    Las ya adaptadas (CV hecho, quizá en postulación) solo con --incluir-adaptadas."""
+    con = db.conectar()
+    minimo = minimo_postular()
+    estados = ("nueva", "cv_adaptado") if args.incluir_adaptadas else ("nueva",)
+    fuera = [(o["id"], m, o["empresa"], o["titulo"]) for o in con.execute(
+        f"SELECT * FROM ofertas WHERE estado IN ({','.join('?' * len(estados))})", estados) if (m := db.motivo_filtro(o, minimo))]
+    for oid, m, *_ in fuera if not args.simular else []:
+        db.cambiar_estado(con, oid, "descartada", f"Filtro: {m}")
+    con.commit()
+    for f in fuera:
+        print(" | ".join(f))
+    print(f"{len(fuera)} ofertas {'se descartarían' if args.simular else 'descartadas'} (mínimo {minimo})")
+
+
+# Notas de candidaturas.xlsx que indican entrevista o respuesta de la empresa
+_ENTREVISTA = re.compile(r"entrevista|interview|videollamada|llamada|prueba t[eé]cnica|technical test", re.I)
+_RESPUESTA = re.compile(r"ha respondido|respond", re.I)
+# "no ha respondido", "sin respuesta", "sin entrevista"...: la negación anula lo que sigue
+_NEGADO = re.compile(r"\b(?:no|sin|nunca|ni)\s+(?:ha\s+|han\s+|hay\s+|hubo\s+|tengo\s+)?\w*\s?(?:respond|respuesta|entrevista|llamad|interview|videollamada)\w*", re.I)
+
+
+def resultado_de(fase: str | None, notas: str | None) -> str | None:
+    if fase == "Rechazado":
+        return "rechazo"
+    notas = _NEGADO.sub(" ", notas or "")
+    if _ENTREVISTA.search(notas):
+        return "entrevista"
+    if fase == "Completado" or _RESPUESTA.search(notas):
+        return "respuesta"
+    return None
+
+
+def sincronizar(con, filas_xlsx, hoy: date, dias_silencio: int = 14) -> list[str]:
+    """Pasa al histórico lo que candidaturas-sync sabe de cada candidatura enviada y marca los silencios.
+    Solo avanza (db.RESULTADO): nunca devuelve una oferta a un estado anterior."""
+    if filas_xlsx is None:   # sin Excel no se sabe si respondieron: no se inventan silencios
+        return []
+    por_clave, por_ref = {}, {}
+    for f in filas_xlsx:
+        if r := resultado_de(f.get("Fase"), f.get("Notas")):
+            por_clave[db.clave(f.get("Empresa"), f.get("Puesto"))] = r
+            if str(f.get("Ref") or "").startswith("li:"):
+                por_ref[str(f["Ref"])] = r
+    cambios = []
+    for o in con.execute("SELECT id, clave, ids_externos, estado, enviada, empresa FROM ofertas WHERE enviada IS NOT NULL").fetchall():
+        if o["estado"] not in db.RESULTADO:
+            continue
+        nuevo = por_clave.get(o["clave"]) or next((por_ref[i] for i in json.loads(o["ids_externos"] or "[]") if i in por_ref), None)
+        if not nuevo and (hoy - date.fromisoformat(o["enviada"])).days >= dias_silencio:
+            nuevo = "silencio_14d"
+        if nuevo and db.RESULTADO[nuevo] > db.RESULTADO[o["estado"]]:
+            db.cambiar_estado(con, o["id"], nuevo, None if nuevo == "silencio_14d" else f"candidaturas-sync: {nuevo}")
+            cambios.append(f"{o['id']} {o['empresa']}: {o['estado']} -> {nuevo}")
+    return cambios
+
+
+def _filas_candidaturas() -> list[dict] | None:
+    """Filas de candidaturas.xlsx, o None si no está configurado o no existe (distinto de un Excel vacío)."""
+    ruta = ruta_candidaturas()
+    if ruta is None or not ruta.is_file():
+        return None
+    from openpyxl import load_workbook
+    wb = load_workbook(ruta, read_only=True, data_only=True)
+    try:
+        filas = wb["Candidaturas"].iter_rows(values_only=True)
+        cab = [str(c or "") for c in next(filas)]
+        return [dict(zip(cab, f)) for f in filas]
+    finally:
+        wb.close()
+
+
+def embudo_total(con) -> dict:
+    """Solo los totales (un COUNT): embudo() lee del disco el adaptacion.json de cada enviada."""
+    total = {"enviadas": 0, "respuesta": 0, "entrevista": 0, "rechazo": 0, "silencio_14d": 0}
+    for estado, n in con.execute("SELECT estado, COUNT(*) FROM ofertas WHERE enviada IS NOT NULL GROUP BY estado"):
+        total["enviadas"] += n
+        if estado in total:
+            total[estado] += n
+    return total
+
+
+def embudo(con) -> dict:
+    """Enviadas y resultados por portal, tipo de candidatura, categoría, CV (perfil) y si hubo contacto."""
+    from collections import defaultdict
+    grupos = defaultdict(lambda: defaultdict(lambda: {"enviadas": 0, "respuesta": 0, "entrevista": 0, "rechazo": 0}))
+    total = {"enviadas": 0, "respuesta": 0, "entrevista": 0, "rechazo": 0, "silencio_14d": 0}
+    for o in con.execute("SELECT * FROM ofertas WHERE enviada IS NOT NULL"):
+        adapt = db.OUTPUT / o["semana"] / o["id"] / "adaptacion.json"
+        try:
+            cv_perfil = json.loads(adapt.read_text(encoding="utf-8")).get("perfil") or "base"
+        except (OSError, ValueError):
+            cv_perfil = "sin_cv"
+        claves = {"portal": (json.loads(o["portales"] or "[]") or ["?"])[0], "tipo": o["tipo_candidatura"] or "?",
+                  "categoria": o["categoria"] or "?", "cv": cv_perfil,
+                  "contacto": "sí" if o["contacto"] and o["contacto"] != "no encontrado" else "no"}
+        total["enviadas"] += 1
+        if o["estado"] in total:
+            total[o["estado"]] += 1
+        for dim, val in claves.items():
+            g = grupos[dim][val]
+            g["enviadas"] += 1
+            if o["estado"] in g:
+                g[o["estado"]] += 1
+    return {"total": total, **{d: dict(v) for d, v in grupos.items()}}
+
+
+def embudo_espontaneas(filas_xlsx) -> dict:
+    """Respuestas a las candidaturas espontáneas (filas de candidaturas.xlsx con 'espont' en el puesto)."""
+    t = {"enviadas": 0, "respuesta": 0, "entrevista": 0, "rechazo": 0}
+    for f in filas_xlsx:
+        if "espont" in str(f.get("Puesto") or "").lower():
+            t["enviadas"] += 1
+            if r := resultado_de(f.get("Fase"), f.get("Notas")):
+                t[r] += 1
+    return t
+
+
+def cmd_resultados(args):
+    con = db.conectar()
+    filas = _filas_candidaturas()
+    esp = embudo_espontaneas(filas or [])
+    cambios = sincronizar(con, filas, date.today())
+    if args.simular:
+        con.rollback()
+    else:
+        con.commit()
+    for c in cambios:
+        print(c)
+    e = {**embudo(con), "espontaneas": esp}
+    print(json.dumps(e if args.json else e["total"], ensure_ascii=False))
+    pos = esp["respuesta"] + esp["entrevista"]
+    print(f"espontáneas: {esp['enviadas']} enviadas, {pos} respuestas/entrevistas ({100 * pos // max(esp['enviadas'], 1)}%), "
+          f"{esp['rechazo']} rechazos")
+    if not args.json:
+        for dim in ("portal", "tipo", "categoria", "cv", "contacto"):
+            for val, g in sorted(e.get(dim, {}).items(), key=lambda x: -x[1]["enviadas"]):
+                pos = g["respuesta"] + g["entrevista"]
+                print(f"{dim:9} {val:22} {g['enviadas']:4} enviadas  {pos:3} respuestas/entrevistas "
+                      f"({100 * pos // max(g['enviadas'], 1)}%)  {g['rechazo']:3} rechazos")
+
+
+def cfg_contactos(p: dict | None = None) -> dict:
+    return {"encaje_minimo": 60, "seguimiento_dias": 12, "max_diario": 10, **((p or perfil()).get("contactos") or {})}
+
+
+def contactos_pendientes(con, cfg: dict, hoy: date | None = None) -> dict:
+    """A quién buscar contacto (enviadas con encaje alto sin contacto) y a quién escribir el seguimiento
+    (sin respuesta a los seguimiento_dias, con contacto encontrado y sin seguimiento escrito)."""
+    hoy = hoy or date.today()
+    limite = date.fromordinal(hoy.toordinal() - cfg["seguimiento_dias"]).isoformat()
+    campos = "id, semana, empresa, titulo, urls, portales, encaje, enviada, contacto, nota_contacto"
+    contactar = con.execute(f"SELECT {campos} FROM ofertas WHERE estado IN ('enviada', 'silencio_14d') AND encaje >= ? AND contacto IS NULL "
+                            "ORDER BY enviada DESC, encaje DESC LIMIT ?", (cfg["encaje_minimo"], cfg["max_diario"])).fetchall()
+    seguir = con.execute(f"SELECT {campos} FROM ofertas WHERE estado IN ('enviada', 'silencio_14d') AND encaje >= ? "
+                         "AND contacto IS NOT NULL AND contacto != 'no encontrado' AND seguimiento IS NULL AND enviada <= ? "
+                         "AND contacto_fecha < ? ORDER BY enviada", (cfg["encaje_minimo"], limite, hoy.isoformat())).fetchall()
+    fmt = lambda o: {**{k: o[k] for k in ("id", "empresa", "titulo", "encaje", "enviada", "contacto", "nota_contacto")},
+                     "urls": json.loads(o["urls"] or "[]"), "portales": json.loads(o["portales"] or "[]"),
+                     "adaptacion": str(db.OUTPUT / o["semana"] / o["id"] / "adaptacion.json")}
+    return {"contactar": [fmt(o) for o in contactar], "seguir": [fmt(o) for o in seguir]}
+
+
+def cmd_contactos(args):
+    con = db.conectar()
+    if args.hoy:   # textos generados hoy, para el email de resumen (los envía el candidato a mano)
+        filas = con.execute("SELECT id, empresa, titulo, contacto, nota_contacto, seguimiento FROM ofertas "
+                            "WHERE contacto_fecha = ? AND contacto != 'no encontrado'", (date.today().isoformat(),))
+        print(json.dumps([dict(f) for f in filas], ensure_ascii=False, indent=1))
+        return
+    print(json.dumps(contactos_pendientes(con, cfg_contactos()), ensure_ascii=False, indent=1))
+
+
+MAX_NOTA = 300   # límite de la nota de invitación de LinkedIn
+
+
+def cmd_contacto(args):
+    """Guarda la persona y la nota de conexión (o el mensaje de seguimiento) de una oferta. Nunca envía nada."""
+    con = db.conectar()
+    if not con.execute("SELECT 1 FROM ofertas WHERE id = ?", (args.id,)).fetchone():
+        raise SystemExit(f"No existe la oferta {args.id}")
+    for nombre, texto in (("nota", args.nota), ("seguimiento", args.seguimiento)):
+        if texto and len(texto) > MAX_NOTA:
+            raise SystemExit(f"{nombre} de {len(texto)} caracteres: máximo {MAX_NOTA}. Recórtala.")
+        if texto and re.search("[—–]", texto):
+            raise SystemExit(f"{nombre} con guiones largos o medios: quítalos.")
+    cambios = {"contacto": args.persona, "nota_contacto": args.nota, "seguimiento": args.seguimiento}
+    cambios = {k: v for k, v in cambios.items() if v}
+    if not cambios:
+        raise SystemExit("Nada que guardar: usa --persona, --nota o --seguimiento")
+    cambios["contacto_fecha"] = date.today().isoformat()
+    con.execute(f"UPDATE ofertas SET {', '.join(f'{k} = ?' for k in cambios)} WHERE id = ?", [*cambios.values(), args.id])
+    con.commit()
+    print(f"{args.id}: {', '.join(cambios)} guardado")
 
 
 def cmd_modo(args):
@@ -497,6 +781,24 @@ def main(argv=None):
     s.add_argument("--csv", help="Otro CSV (por defecto el de espontáneas activo)")
     s.add_argument("--excel", help="Otro candidaturas.xlsx (por defecto el de candidaturas_sync)")
     s.set_defaults(fn=cmd_espontaneas_consulta)
+    s = sub.add_parser("perfiles", help="Solo lectura: perfiles de candidatura (cuándo aplica cada uno, asunto y CV fijo)")
+    s.set_defaults(fn=cmd_perfiles)
+    s = sub.add_parser("espontaneas-informe", help="Solo lectura: resultados de las espontáneas por categoría, destinatario, "
+                       "sector, tecnología y semana (el Excel es la fuente de respuestas)")
+    s.add_argument("--csv"); s.add_argument("--excel"); s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_espontaneas_informe)
+    s = sub.add_parser("depurar", help="Descarta de las ofertas nuevas lo que no pasa el filtro de calidad")
+    s.add_argument("--simular", action="store_true")
+    s.add_argument("--incluir-adaptadas", action="store_true", help="también las que ya tienen CV adaptado")
+    s.set_defaults(fn=cmd_depurar)
+    s = sub.add_parser("resultados", help="Respuestas/rechazos desde candidaturas.xlsx, silencios y embudo")
+    s.add_argument("--simular", action="store_true", help="Muestra los cambios sin guardarlos")
+    s.add_argument("--json", action="store_true", help="Embudo completo en JSON"); s.set_defaults(fn=cmd_resultados)
+    s = sub.add_parser("contactos", help="Pendientes de contacto y de seguimiento (JSON)")
+    s.add_argument("--hoy", action="store_true", help="Textos generados hoy (para el email)"); s.set_defaults(fn=cmd_contactos)
+    s = sub.add_parser("contacto", help="Guarda persona, nota de conexión o seguimiento (máx. 300 caracteres)")
+    s.add_argument("id"); s.add_argument("--persona", help="'Nombre | cargo | url' o 'no encontrado'")
+    s.add_argument("--nota"); s.add_argument("--seguimiento"); s.set_defaults(fn=cmd_contacto)
     s = sub.add_parser("modo", help="Modos de envío efectivos y rutas (en JOB_AGENTS_PRUEBA=1: revision/borrador)")
     s.set_defaults(fn=cmd_modo)
     s = sub.add_parser("huella", help="Huella de solo lectura del histórico (integridad, conteos, hash)")

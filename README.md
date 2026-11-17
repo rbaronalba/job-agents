@@ -1,5 +1,10 @@
 # job-agents
 
+[![CI](https://github.com/rbaronalba/job-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/rbaronalba/job-agents/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/rbaronalba/job-agents/actions/workflows/codeql.yml/badge.svg)](https://github.com/rbaronalba/job-agents/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/rbaronalba/job-agents/badge)](https://securityscorecards.dev/viewer/?uri=github.com/rbaronalba/job-agents)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
+
 Sistema de agentes de [Claude Code](https://claude.com/claude-code) que automatiza la búsqueda de empleo: busca ofertas, adapta tu CV a cada una, postula con Claude in Chrome y envía candidaturas espontáneas por Gmail.
 
 No es una app que se ejecute sola: es un proyecto de Claude Code. Todo se dispara desde una conversación de Claude Code (terminal, VS Code o la app) con comandos (`/buscar`, `/adaptar`...).
@@ -70,3 +75,5 @@ powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1
 ## Seguridad y datos personales
 
 Este repo está pensado para publicarse: todo lo personal (`config/profile.yaml`, `cv/`, `data/`, `output/`, `logs/`, `.env`) está en una lista blanca de `.gitignore` y además bloqueado por el hook `githooks/pre-commit` si intentas commitearlo por error. Nunca edites el `.gitignore` para añadir esos archivos ni fuerces un commit con `--no-verify`.
+
+Política de seguridad y cómo informar de una vulnerabilidad: [SECURITY.md](SECURITY.md). Qué amenazas se consideran, qué controles hay y cuáles son sus límites: [THREAT_MODEL.md](THREAT_MODEL.md). Licencia: [MIT](LICENSE).

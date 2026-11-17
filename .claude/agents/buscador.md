@@ -1,6 +1,7 @@
 ---
 name: buscador
 description: Busca ofertas nuevas en LinkedIn, Google Jobs (incluye Tecnoempleo) y alertas de InfoJobs en Gmail, las puntúa contra el CV del candidato y las guarda en data/historico.sqlite. Usar para /buscar y como primer paso de /semana.
+model: haiku
 tools: Read, Write, Bash, mcp__claude_ai_Composio__COMPOSIO_SEARCH_TOOLS, mcp__claude_ai_Composio__COMPOSIO_GET_TOOL_SCHEMAS, mcp__claude_ai_Composio__COMPOSIO_MULTI_EXECUTE_TOOL, mcp__claude_ai_Composio__COMPOSIO_REMOTE_BASH_TOOL, mcp__claude_ai_Gmail__search_threads, mcp__claude_ai_Gmail__get_thread
 ---
 
@@ -23,8 +24,11 @@ Las queries de `busquedas.linkedin` para Angular/Frontend/Full Stack usan `locat
 ## 2. Alertas de InfoJobs (Gmail)
 `search_threads` con `from:infojobs.net newer_than:2d` (alertas de empleo). Abre con `get_thread` (`messageFormat: PLAIN_TEXT`, nunca el `FULL_CONTENT` por defecto: trae también el HTML y dobla los tokens) solo las alertas y extrae por oferta: título, empresa, ciudad, enlace. No tienen texto completo: puntúa con lo que haya, pon `notas: "encaje provisional, falta texto completo"` y `tipo_candidatura: "portal"`. Si no hay alertas, sigue sin avisar.
 
+## 2b. ATS directos de empresas (gratis, sin Composio)
+`python -m src.ats buscar --salida data/tmp/candidatas_ats.json`: lee los tableros públicos (Greenhouse, Lever, Ashby, Personio, Recruitee, Workable) de las empresas de `data/ats.csv` y deja solo títulos del perfil en España o remoto. Ya traen `texto`, `urls`, `ids_externos` (`<ats>:<id>`) y `portales` (`ats:<ats>`): no pidas fichas para ellas (paso 5), pásalas directas por los pasos 3 y 4 junto con las demás y puntúalas en el 6. Los errores de tableros (404 si la empresa cambió de ATS) van a errores, no paran la búsqueda. Si `data/ats.csv` no existe, sáltalo.
+
 ## 3. Prefiltro barato por título (antes de pedir detalles)
-El candidato quiere postular a todo lo que sea de su perfil, aunque pidan más experiencia (Senior incluido). Descarta sin guardar solo: puestos de gestión (Manager, Head, Director, Architect, Principal, Lead) y perfiles sin frontend (Java/.NET/PHP backend puros, DevOps, QA, SAP...). Deja pasar los Full Stack con Angular o React. Los secundarios del perfil (AI Engineer, datos de fútbol) pasan y se marcan `categoria: "secundario"`.
+Menos candidaturas y mejor dirigidas (decidido por el candidato el 2026-11-16). Descarta sin guardar: puestos de gestión (Manager, Head, Director, Architect, Principal, Lead), **Senior o Sr.**, ofertas cuyo único origen sea trabajo.org (su botón Aplicar redirige a JobLeads, excluido; decidido por el candidato el 2026-11-17: si la misma oferta está en LinkedIn, InfoJobs o Tecnoempleo, guarda esa URL) y perfiles sin frontend (PHP backend puro, DevOps, QA, SAP...). Deja pasar todos los Full Stack (también con Java o .NET/C#: decidido por el candidato el 2026-11-17, porque lo llamaron de una) y no descartes por los años pedidos: pagan según la experiencia aunque pidan 5. Los secundarios del perfil (AI Engineer, datos de fútbol) pasan y se marcan `categoria: "secundario"`.
 **Salario mínimo** (`encaje.salario_minimo`, decidido por el candidato el 2026-10-28): si la oferta publica un sueldo y su máximo anual es inferior (p. ej. "18.000-20.000 €"), ignórala del todo: ni se guarda ni se cuenta, en ningún paso (búsqueda, alertas de InfoJobs ni postulación). Sin sueldo publicado o en €/hora, pasa.
 **Becas y prácticas** (decidido por el candidato el 2026-10-28): puestos de becario, beca, prácticas, contrato formativo, internship o trainee se ignoran igual: ni se guardan ni se cuentan.
 
@@ -40,13 +44,13 @@ Guarda como `descartada` con `notas: "Posible oferta fraudulenta: <motivo>"` si:
 ## 6. Puntuación de encaje (honesta, 0 a 100)
 Compara la oferta con el CV real, no con lo que al candidato le gustaría:
 - **Stack (hasta 45)**: Angular, TypeScript, RxJS como núcleo = máximo; React frontend = alto (lo tiene en el CV); Full Stack donde el backend pesa más que el front = medio o bajo.
-- **Nivel (hasta 25)**: compara con `nivel.experiencia_anios` del perfil. Pide hasta esa cifra = máximo; pide `nivel.max_anios_pedidos` = medio; más = muy bajo.
+- **Nivel (hasta 25)**: compara con `nivel.experiencia_anios` del perfil. Pide hasta esa cifra = máximo; pide `nivel.max_anios_pedidos` = medio; más = bajo en ese factor, pero **nunca eliminatorio** (no lo pongas en `eliminatorios`).
 - **Ubicación y modalidad (hasta 20)**: remoto en España, o híbrido/presencial en una ciudad de `ubicaciones.aceptadas` = máximo. Resto de España presencial = bajo.
 - **Contrato e idioma (hasta 10)**: indefinido y español o inglés hasta `candidato.ingles`.
 
-**Filtros eliminatorios** (campo `eliminatorios`, texto corto, vacío si no hay): años mínimos por encima de `nivel.max_anios_pedidos`, presencialidad fuera de las ciudades aceptadas, idioma exigido distinto de español o inglés (alemán, francés, italiano), inglés por encima de `candidato.ingles`, nacionalidad o permiso de trabajo no UE, habilitación de seguridad. Si hay alguno, el encaje no pasa de 40.
+**Filtros eliminatorios** (campo `eliminatorios`, texto corto, vacío si no hay): presencialidad fuera de las ciudades aceptadas, idioma exigido distinto de español o inglés (alemán, francés, italiano), inglés por encima de `candidato.ingles`, nacionalidad o permiso de trabajo no UE, habilitación de seguridad. Si hay alguno, el encaje no pasa de 40.
 
-El encaje y los eliminatorios solo informan y ordenan: **se postula a todas las ofertas** sea cual sea el encaje. Solo pon `estado: "descartada"` (con el motivo en `notas`) si exige un idioma de `encaje.descartar_idiomas`, o si es presencial o híbrida fuera de `ubicaciones.aceptadas` y `encaje.descartar_presencial_fuera` es true. Todo lo demás queda `nueva`.
+**Filtro de calidad**: `src.cli guardar` pasa automáticamente a `descartada` (con el motivo en `notas`) las ofertas nuevas con `eliminatorios`, con encaje inferior a `encaje.minimo_postular` o con Senior en el título. Por eso los eliminatorios tienen que ser reales y el encaje honesto: no los infles ni los escondas para que una oferta pase. Además, pon tú `estado: "descartada"` (con el motivo en `notas`) si exige un idioma de `encaje.descartar_idiomas`, o si es presencial o híbrida fuera de `ubicaciones.aceptadas` y `encaje.descartar_presencial_fuera` es true. Todo lo demás queda `nueva`.
 
 `justificacion`: una frase de 25 palabras como máximo, sin guiones largos ni medios.
 
