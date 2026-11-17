@@ -24,13 +24,15 @@ COLUMNAS = [
     ("Salario", "salario", 16), ("Publicada", "fecha_pub", 11), ("Portales", "portales", 14), ("Enlace", "urls", 12),
     ("Candidatura", "tipo_candidatura", 14), ("Idioma", "idioma", 7), ("Categoría", "categoria", 11),
     ("Justificación", "justificacion", 55), ("Carencias", "carencias", 30), ("Coincidencia KW", "coincidencia_kw", 10),
-    ("Enviada", "enviada", 11), ("Notas", "notas", 45),
+    ("Enviada", "enviada", 11), ("Contacto", "contacto", 30), ("Nota contacto", "nota_contacto", 50),
+    ("Seguimiento", "seguimiento", 50), ("Notas", "notas", 45),
     ("_estado_exp", "estado", 1), ("_notas_exp", "notas", 1),   # ocultas: lo último exportado
 ]
 CAB = [c[0] for c in COLUMNAS]
 AZUL = "FF1F4E78"
 COLOR_ESTADO = {"nueva": "FFDDEBF7", "cv_adaptado": "FFFFF2CC", "pendiente_revision": "FFFCE4D6",
-                "enviada": "FFE2EFDA", "descartada": "FFD9D9D9"}
+                "enviada": "FFE2EFDA", "descartada": "FFD9D9D9", "respuesta": "FFB4E5A2", "entrevista": "FF63BE7B",
+                "rechazo": "FFFF9B9B", "silencio_14d": "FFEDEDED"}
 
 
 def ruta(semana: str) -> Path:
@@ -43,8 +45,9 @@ def importar_cambios(con, semana: str) -> list[str]:
     if not r.exists():
         return []
     ws = load_workbook(r)[HOJA]
-    filas = ws.iter_rows(min_row=2, values_only=True)
-    i = {c: CAB.index(c) for c in ("ID", "Estado", "Notas", "_estado_exp", "_notas_exp")}
+    filas = ws.iter_rows(values_only=True)
+    cab = list(next(filas, ()))   # cabecera del propio archivo: un Excel de una versión anterior tiene otras columnas
+    i = {c: cab.index(c) for c in ("ID", "Estado", "Notas", "_estado_exp", "_notas_exp")}
     cambios = []
     for f in filas:
         oid = f[i["ID"]]
@@ -95,7 +98,7 @@ def exportar(con, semana: str | None = None) -> tuple[Path, list[str]]:
     for r, fila in enumerate(filas, start=2):
         for n, (cab, campo, _) in enumerate(COLUMNAS, start=1):
             c = ws.cell(row=r, column=n, value=_valor(fila, campo))
-            c.alignment = Alignment(vertical="top", wrap_text=cab in ("Justificación", "Eliminatorios", "Carencias", "Notas", "Puesto"))
+            c.alignment = Alignment(vertical="top", wrap_text=cab in ("Justificación", "Eliminatorios", "Carencias", "Notas", "Puesto", "Nota contacto", "Seguimiento"))
         url = _valor(fila, "urls")
         if url:
             c = ws.cell(row=r, column=CAB.index("Enlace") + 1, value="Abrir")

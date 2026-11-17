@@ -39,8 +39,10 @@ busquedas:
   max_detalles_por_ejecucion: 50   # tope de fichas completas pedidas por ejecución
 
 encaje:
-  # El encaje solo ordena e informa: se adapta CV y se postula a TODAS las ofertas.
-  # Únicas exclusiones automáticas (se guardan como descartada):
+  # Filtro de calidad (decidido por el candidato el 2026-11-16, src.db.motivo_filtro): no se postula a puestos
+  # Senior, con eliminatorios ni con encaje inferior a minimo_postular (quedan descartada con el motivo).
+  minimo_postular: 55
+  # Otras exclusiones automáticas (se guardan como descartada):
   descartar_idiomas: [alemán, francés, italiano]   # exigidos y que no hablas
   salario_minimo: 0              # ofertas con sueldo publicado (máximo) inferior: se ignoran, ni se guardan ni se cuentan; 0 = sin mínimo
   descartar_presencial_fuera: true                 # presencial/híbrido fuera de ubicaciones.aceptadas
@@ -53,13 +55,25 @@ respuestas:
   anios_total_desarrollo: 0
   preguntas: {}     # pregunta -> respuesta que ya hayas dado
 
+# Perfiles de candidatura (opcional). Cada uno liga un tipo de oferta o empresa con un CV fijo y un asunto.
+# `cv` es una clave de `perfiles` en cv/cv_base.yaml (o "base" si no tienes `perfiles`); dos perfiles pueden
+# compartir `cv`. Sin este bloque hay un perfil por cada clave de `perfiles`, o uno solo con tu CV base.
+# Comprobación: python -m src.cli perfiles. Los CV fijos se generan con: python -m src.cli cv base
+perfiles_cv:
+  principal:
+    cv: base
+    defecto: true                  # el que se usa si ninguna oferta o empresa encaja con otro
+    cuando: "<tipo de empresas y ofertas a las que aplica este perfil>"
+    asunto: {es: "<Tu puesto>", en: "<Your job title>"}   # opcional: por defecto, el puesto del titular del CV
+    # skills_oferta_completa: true # opcional: el adaptador pone en competencias todos los requisitos técnicos de la oferta
+
 envio:
   max_diario_total: 30             # tope del día sumando portales y espontáneas
   modo: revision                   # revision: rellena y para antes de enviar | auto: Claude envía en todos los portales
   max_diario_portales: 15
   espontaneas_modo: borrador       # borrador | auto
   espontaneas_max_diario: 15
-  espontaneas_objetivo_diario: 12  # empresas nuevas por día (10 a 15)
+  espontaneas_objetivo_diario: 12  # empresas nuevas por día 
   espontaneas_ambito: "<ámbito geográfico y tipo de empresas/puestos que aceptas>"
   # Búsqueda por anillos concéntricos desde tu ciudad: no se pasa al siguiente hasta agotar el actual.
   # Ejemplo con provincias españolas; sustitúyelo por anillos reales desde tu ciudad.
@@ -75,3 +89,14 @@ envio:
 # Proyecto opcional de seguimiento de candidaturas ya enviadas (para no repetir ofertas).
 # null si no lo usas; si lo usas, pon la carpeta (p. ej. candidaturas-sync).
 candidaturas_sync: null
+
+# Contacto humano tras postular (fase contactos, decidido por el candidato el 2026-11-16). El agente solo LEE
+# LinkedIn y redacta: la invitación y los mensajes los envía el candidato a mano (riesgo de bloqueo de cuenta).
+contactos:
+  encaje_minimo: 60                # enviadas con este encaje o más: buscar reclutador o responsable y redactar nota
+  seguimiento_dias: 12             # sin respuesta a los N días: un único mensaje corto al mismo contacto
+  max_diario: 10                   # contactos nuevos por día
+
+# Borradores de posts de LinkedIn (fase post): nunca se publican solos
+linkedin_posts:
+  cada_dias: 10

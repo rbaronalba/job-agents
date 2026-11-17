@@ -1,6 +1,7 @@
 ---
 name: correo
 description: Único punto de acceso a Gmail de job-agents. Las fases que se ejecutan en el hilo principal (espontáneas, seguimiento de candidaturas-sync, email de resumen) le delegan toda operación de Gmail, porque en claude -p el conector de Gmail solo está disponible en subagentes. Recibe una petición concreta y devuelve un JSON compacto.
+model: haiku
 tools: Read, Bash, mcp__claude_ai_Gmail__search_threads, mcp__claude_ai_Gmail__get_thread, mcp__claude_ai_Gmail__get_message, mcp__claude_ai_Gmail__list_drafts, mcp__claude_ai_Gmail__get_draft, mcp__claude_ai_Gmail__create_draft, mcp__claude_ai_Gmail__send_message, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Gmail__create_label, mcp__claude_ai_Gmail__label_message
 ---
 

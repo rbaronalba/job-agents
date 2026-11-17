@@ -24,6 +24,49 @@ PROFILE = RAIZ / "config" / "profile.yaml"
 GUIONES_PROHIBIDOS = "—–"  # em dash, en dash
 
 
+IDIOMAS = ("es", "en")
+
+
+def _idiomas(base: dict) -> list[str]:
+    return [i for i in IDIOMAS if i in base]
+
+
+def _claves_perfiles(base: dict) -> list[str]:
+    return list(next((base[i].get("perfiles") for i in _idiomas(base) if base[i].get("perfiles")), None) or {})
+
+
+def cvs_fijos(base: dict) -> list[tuple[str, str]]:
+    """(carpeta, idioma) de los CV fijos: una carpeta cv/<clave>/<idioma>/ por cada clave de `perfiles` de cv_base
+    (sin `perfiles`, una sola: cv/base/<idioma>/). El número de perfiles lo decide cv_base.yaml, no las carpetas."""
+    return [(c, i) for c in _claves_perfiles(base) or ["base"] for i in _idiomas(base)]
+
+
+def perfiles_cv(prof: dict, base: dict) -> tuple[list[dict], list[str]]:
+    """Perfiles de candidatura (espontáneas y adaptador) y avisos. Salen de `perfiles_cv` de config/profile.yaml;
+    sin él, uno por cada clave de `perfiles` de cv_base (o uno solo, `principal`, con el CV base).
+    Cada uno: id, cv (clave de `perfiles` o "base"), cuando, asunto {es,en}, defecto, skills_oferta_completa, carpeta."""
+    claves = _claves_perfiles(base)
+    cfg = prof.get("perfiles_cv") or {k: {"cv": k} for k in claves} or {"principal": {"cv": "base"}}
+    avisos, salida = [], []
+    for pid, c in cfg.items():
+        c = c or {}
+        cv = c.get("cv") or pid
+        if cv != "base" and cv not in claves:
+            avisos.append(f"{pid}: cv '{cv}' no es una clave de `perfiles` de cv_base.yaml ({claves or 'sin perfiles'})")
+        if cv == "base" and claves:
+            avisos.append(f"{pid}: cv 'base' pero cv_base.yaml tiene perfiles {claves}")
+        asunto = dict(c.get("asunto") or {})
+        for i in _idiomas(base):   # por defecto, el puesto del titular de ese CV
+            titular = ((base[i].get("perfiles") or {}).get(cv) or {}).get("titular") or base[i].get("titular") or ""
+            asunto.setdefault(i, titular.split("|")[0].strip())
+        salida.append({"id": pid, "cv": cv, "cuando": c.get("cuando") or "", "asunto": asunto,
+                       "skills_oferta_completa": bool(c.get("skills_oferta_completa")),
+                       "defecto": bool(c.get("defecto")), "carpeta": f"cv/{cv}"})
+    if salida and not any(x["defecto"] for x in salida):
+        salida[0]["defecto"] = True
+    return salida, avisos
+
+
 def componer(adapt: dict) -> tuple[dict, dict]:
     base = yaml.safe_load(BASE.read_text(encoding="utf-8"))
     idioma = adapt.get("idioma", "es")
