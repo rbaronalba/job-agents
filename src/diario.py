@@ -32,7 +32,7 @@ from . import db, guardia
 FASES = ["buscar", "adaptar", "postular", "espontaneas", "seguimiento", "contactos", "post", "resumen"]
 # Las mismas herramientas que permitía diario.bat para la sesión única, salvo Gmail y candidaturas (ver permisos())
 HERRAMIENTAS = ("Read,Write,Edit,Glob,Grep,ToolSearch,Agent,Task,mcp__claude-in-chrome,"
-                "Bash(python -m src.cli:*),Bash(cd:*),Bash(mkdir:*)")
+                "Bash(python -m src.cli:*),Bash(python -m src.ats buscar:*),Bash(cd:*),Bash(mkdir:*)")
 # Mínimo privilegio por fase: Composio (puede enviar correo) solo busca; la web abierta solo las espontáneas
 WEB, COMPOSIO = "WebSearch,WebFetch", "mcp__claude_ai_Composio"
 _GMAIL = "mcp__claude_ai_Gmail__"

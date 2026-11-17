@@ -33,7 +33,7 @@ DOMINIOS = ("linkedin.com", "infojobs.net", "tecnoempleo.com", "google.com", "gr
             "teamtailor.com", "breezy.hr", "bamboohr.com", "jobvite.com", "icims.com", "join.com", "softgarden.io")
 RED = re.compile(r"curl|wget|\bnc\b|ncat|\bssh\b|\bscp\b|ftp|https?://|python|node|perl|ruby|base64|/dev/tcp|\bsh\b|bash",
                  re.I)
-JS_RED = re.compile(r"fetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|window\.open|location\s*[=.]|\.href\s*=|import\s*\(",
+JS_RED = re.compile(r"fetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|window\.open|import\s*\(|location(?:\.href)?\s*=(?!=)|location\.(?:assign|replace)\s*\(|\.href\s*=(?!=)",
                     re.I)
 LECTURA = {"search_threads", "get_thread", "get_message", "list_drafts", "get_draft", "list_labels"}
 
