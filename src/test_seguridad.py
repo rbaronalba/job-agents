@@ -1,6 +1,6 @@
 """Pruebas de bypass con sesiones reales de Claude: python -m src.test_seguridad [--solo prueba|produccion]
 
-Cuesta sesiones de Claude (unos céntimos cada una): no forma parte de test_optim. Monta un proyecto de prueba en una
+Cuesta sesiones de Claude (unos céntimos cada una): no forma parte de `python -m pytest`. Monta un proyecto de prueba en una
 carpeta temporal con archivos centinela (config/, cv/, data/empresas.csv, data/historico.sqlite, candidaturas-sync/
 con un `python -m candidaturas` falso que escribiría el Excel) y lanza `claude -p` desde ahí con los permisos exactos
 de diario.permisos(). Ninguna llamada de escritura a Gmail puede tener efecto aunque fallara la barrera:

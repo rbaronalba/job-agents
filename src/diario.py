@@ -49,8 +49,8 @@ GMAIL_ESCRITURA = ["create_draft", "update_draft", "delete_draft", "send_message
 REALES = ["data/empresas.csv", "data/historico.sqlite", "config/**", "cv/**", "candidaturas-sync/**"]
 
 
-def permisos(fase: str, prueba: bool, espontaneas: str | None = None, dominios: tuple = ()) -> tuple[str, str]:
-    """(--allowedTools, --disallowedTools) de una fase. Las prohibiciones valen también para sus subagentes."""
+def gmail_permisos(fase: str, prueba: bool, espontaneas: str | None = None) -> tuple[list[str], list[str]]:
+    """(lectura, escritura) de Gmail que una sesión puede usar, por nombre de herramienta sin prefijo."""
     if prueba:
         escritura = []
     elif fase == "espontaneas":
@@ -61,6 +61,12 @@ def permisos(fase: str, prueba: bool, espontaneas: str | None = None, dominios: 
     else:   # buscar, adaptar, postular, seguimiento: solo lectura
         escritura = []
     lectura = [] if fase == "email" and not prueba else GMAIL_LECTURA
+    return lectura, escritura
+
+
+def permisos(fase: str, prueba: bool, espontaneas: str | None = None, dominios: tuple = ()) -> tuple[str, str]:
+    """(--allowedTools, --disallowedTools) de una fase. Las prohibiciones valen también para sus subagentes."""
+    lectura, escritura = gmail_permisos(fase, prueba, espontaneas)
     permitidas = [HERRAMIENTAS, *(_GMAIL + h for h in lectura + escritura), *(f"ClaudeInChromeDomain({d})" for d in dominios)]
     prohibidas = [_GMAIL + h for h in GMAIL_ESCRITURA if h not in escritura]
     permitidas += [COMPOSIO] if fase == "buscar" else []
@@ -115,15 +121,15 @@ class Diario:
         self.fases: list[dict] = []
         self.parar = False
         self.chrome = True
-        base = db.RAIZ / "data" / "tmp" / "prueba" if a.prueba else db.RAIZ
-        self.dir_logs = base / "logs" / "diario" / f"{datetime.now():%Y-%m-%d_%H%M%S}"
+        logs = db.DATOS_PRUEBA / "logs" if a.prueba else db.LOGS_REAL
+        self.dir_logs = logs / "diario" / f"{datetime.now():%Y-%m-%d_%H%M%S}"
         self.env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         if a.prueba:
             # Copia nueva en cada ensayo: el histórico y el CSV reales nunca se abren en escritura
-            copia = db.RAIZ / "data" / "tmp" / "prueba" / "historico.sqlite"
+            copia = db.DATOS_PRUEBA / "historico.sqlite"
             copia.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(a.origen_db, copia)
-            csv_real = db.RAIZ / "data" / "empresas.csv"
+            csv_real = getattr(a, "origen_empresas", None) or db.RAIZ / "data" / "empresas.csv"
             if csv_real.exists():
                 shutil.copy2(csv_real, copia.parent / "empresas.csv")
             self.env.update(JOB_AGENTS_PRUEBA="1", JOB_AGENTS_DB=str(copia))
@@ -339,7 +345,7 @@ class Diario:
             "texto literal; 'seguimiento' si lo hay, si no 'nota_contacto')", self.cli("contactos", "--hoy"),
             "## Resultado de cada fase", *(f"- {f['fase']} ({f['estado']}): {f.get('texto', f['detalle'])[-800:]}" for f in self.fases),
         ]), encoding="utf-8")
-        ruta = _seguro(datos.relative_to(db.RAIZ).as_posix())
+        ruta = _seguro(db.corta(datos).as_posix())
         self.claude("email", f"Lee {ruta}, redacta el correo tal y como indica y pide al subagente correo que lo envie "
                     "(operacion enviar, resumen diario): tu no tienes Gmail.", destino=destino)
 
@@ -370,6 +376,7 @@ def main(argv=None):
     p.add_argument("--prueba", action="store_true")
     p.add_argument("--simular", action="store_true")
     p.add_argument("--origen-db", type=Path, default=db.RUTA, help="Histórico que se copia en --prueba")
+    p.add_argument("--origen-empresas", type=Path, default=None, help="CSV de empresas que se copia en --prueba (por defecto data/empresas.csv)")
     a = p.parse_args(argv)
     a.fases = [f.strip() for f in a.fases.split(",")]
     if desconocidas := set(a.fases) - set(FASES):

@@ -27,7 +27,7 @@ in Chrome, Composio o Gmail en sí.
 
 | # | Amenaza | Control | Dónde | Prueba |
 |---|---|---|---|---|
-| 1 | Una oferta ordena enviar el CV o un correo a un tercero | Gmail: escritura denegada salvo lo que la fase necesita; `send_message` solo al destinatario validado | `diario.permisos()`, `guardia.motivo()` | `test_optim`, `test_guardia` |
+| 1 | Una oferta ordena enviar el CV o un correo a un tercero | Gmail: escritura denegada salvo lo que la fase necesita; `send_message` solo al destinatario validado | `diario.permisos()`, `guardia.motivo()` | `test_permisos`, `test_guardia` |
 | 2 | Lo mismo por Composio (que también envía correo) | Composio solo en la fase `buscar`, solo herramientas `JOB_SEARCH_*` y bash sin red | `guardia._composio()` | `test_guardia` |
 | 3 | Una web da un correo falso para una candidatura espontánea | El destinatario debe constar en `empresas.csv` con el dominio de la web de su empresa; un solo `to`, sin cc ni bcc | `guardia.correo_valido()` | `test_guardia` |
 | 4 | El navegador visita o exfiltra a un dominio arbitrario | Lista de dominios en `.claude/settings.json`; por lote, solo los de las ofertas; el hook bloquea `navigate` a otros y JS con `fetch`/XHR/WebSocket | `guardia.motivo()`, `diario.postular()` | `test_guardia` |

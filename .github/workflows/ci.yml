@@ -11,18 +11,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: {persist-credentials: false}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
-        with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements.lock}
-      - run: pip install -r requirements.lock
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: "requirements*.*"}
+      - run: pip install -r requirements.lock -r requirements-dev.txt
       - run: python -m playwright install chromium
       - name: Perfil de ejemplo (los reales nunca están en el repo)
         shell: bash
         run: cp config/profile.example.yaml config/profile.yaml && cp cv/cv_base.example.yaml cv/cv_base.yaml
-      - name: Pruebas offline
-        shell: bash
-        run: |
-          for t in test_guardia test_fase2 test_ats test_espont test_contactos test_optim; do
-            echo "== $t"; python -m src.$t
-          done
+      - name: Pruebas (sin red ni sesiones de Claude)
+        run: python -m pytest -v
   auditoria-dependencias:
     runs-on: ubuntu-latest
     steps:

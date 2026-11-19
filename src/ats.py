@@ -84,11 +84,15 @@ def _texto(h: str | None) -> str:
 
 
 def _fecha(v) -> str | None:
+    """Fecha ISO (AAAA-MM-DD) de un timestamp en ms (Lever) o de un texto ISO; None si falta o no es una fecha válida."""
     if not v:
         return None
-    if isinstance(v, (int, float)):   # Lever: milisegundos
-        return datetime.fromtimestamp(v / 1000, tz=timezone.utc).date().isoformat()
-    return str(v)[:10]
+    try:
+        if isinstance(v, (int, float)):
+            return datetime.fromtimestamp(v / 1000, tz=timezone.utc).date().isoformat()
+        return datetime.fromisoformat(str(v)[:10]).date().isoformat()
+    except (ValueError, OverflowError, OSError):   # basura del ATS: una fecha rota no debe tirar el tablero entero
+        return None
 
 
 def greenhouse(slug):

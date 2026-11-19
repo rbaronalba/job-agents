@@ -15,12 +15,16 @@ RUTA_REAL = RAIZ / "data" / "historico.sqlite"
 # JOB_AGENTS_DB: usar otra base (copia para ensayos). JOB_AGENTS_PRUEBA=1: modo prueba, nunca envía ni toca datos reales.
 RUTA = Path(os.environ["JOB_AGENTS_DB"]).resolve() if os.environ.get("JOB_AGENTS_DB") else RUTA_REAL
 PRUEBA = os.environ.get("JOB_AGENTS_PRUEBA") == "1"
-# En prueba, todo lo que se escribe (Excel, CVs, logs, CSV de espontáneas) va a data/tmp/prueba/
-_DATOS = RAIZ / "data" / "tmp" / "prueba" if PRUEBA else None
-OUTPUT = _DATOS / "output" if PRUEBA else RAIZ / "output"
-LOGS = _DATOS / "logs" if PRUEBA else RAIZ / "logs"
-EXCEL = _DATOS / "ofertas" if PRUEBA else RAIZ / "data" / "ofertas"
-EMPRESAS = _DATOS / "empresas.csv" if PRUEBA else RAIZ / "data" / "empresas.csv"
+# En prueba, todo lo que se escribe (Excel, CVs, logs, CSV de espontáneas) va a data/tmp/prueba/.
+# JOB_AGENTS_DATOS redirige esa carpeta y, si está puesta, también fuera de prueba (los tests nunca tocan los datos reales).
+DATOS_PRUEBA = Path(os.environ["JOB_AGENTS_DATOS"]).resolve() if os.environ.get("JOB_AGENTS_DATOS") else RAIZ / "data" / "tmp" / "prueba"
+_DATOS = DATOS_PRUEBA if PRUEBA or os.environ.get("JOB_AGENTS_DATOS") else None
+OUTPUT = _DATOS / "output" if _DATOS else RAIZ / "output"
+# JOB_AGENTS_LOGS: otra carpeta de logs reales
+LOGS_REAL = Path(os.environ["JOB_AGENTS_LOGS"]).resolve() if os.environ.get("JOB_AGENTS_LOGS") else RAIZ / "logs"
+LOGS = _DATOS / "logs" if _DATOS else LOGS_REAL
+EXCEL = _DATOS / "ofertas" if _DATOS else RAIZ / "data" / "ofertas"
+EMPRESAS = _DATOS / "empresas.csv" if _DATOS else RAIZ / "data" / "empresas.csv"
 
 ESTADOS = ["nueva", "cv_adaptado", "pendiente_revision", "enviada", "descartada",
            "respuesta", "entrevista", "rechazo", "silencio_14d"]   # los 4 últimos: resultado tras enviar (src.cli resultados)
@@ -67,6 +71,11 @@ def clave(empresa: str | None, titulo: str | None) -> str:
     # ponytail: empresa+título normalizados; si un portal reescribe el título no se une, revisar en Excel
     emp = " ".join(re.sub(_SUFIJOS, " ", norm(empresa)).split())
     return f"{emp}|{norm(titulo)}"
+
+
+def corta(ruta: Path) -> Path:
+    """Ruta relativa al proyecto si está dentro; si no (datos de prueba en otra carpeta), la absoluta."""
+    return ruta.relative_to(RAIZ) if ruta.is_relative_to(RAIZ) else ruta
 
 
 def semana(d: date | None = None) -> str:
@@ -185,37 +194,3 @@ def cambiar_estado(con, oid: str, estado: str, nota: str | None = None):
     notas = "; ".join(x for x in [fila["notas"], nota] if x)
     con.execute("UPDATE ofertas SET estado = ?, notas = ?, actualizada = ?, enviada = CASE WHEN ? = 'enviada' THEN ? ELSE enviada END WHERE id = ?",
                 (estado, notas, datetime.now().isoformat(timespec="seconds"), estado, date.today().isoformat(), oid))
-
-
-if __name__ == "__main__":
-    # Autocomprobación: deduplicación entre portales y fusión de URLs
-    con = conectar(Path(":memory:"))
-    a, nueva = guardar(con, {"empresa": "Talan Spain S.L.", "titulo": "Front-End Developer (Angular)",
-                             "portales": ["linkedin"], "urls": ["https://li/1"], "ids_externos": ["li:1"], "encaje": 70})
-    assert nueva
-    b, nueva = guardar(con, {"empresa": "TALAN", "titulo": "Front-End Developer", "portales": ["tecnoempleo"],
-                             "urls": ["https://te/9"], "encaje": None})
-    assert b == a and not nueva, (a, b)
-    c, _ = guardar(con, {"empresa": "Otra", "titulo": "X", "ids_externos": ["li:1"]})
-    assert c == a
-    f = con.execute("SELECT * FROM ofertas").fetchone()
-    assert json.loads(f["portales"]) == ["linkedin", "tecnoempleo"] and f["encaje"] == 70
-    assert norm("Desarrollador/a Frontend (m/f/d)") == "desarrollador a frontend"
-    cambiar_estado(con, a, "enviada", "test")
-    assert con.execute("SELECT enviada FROM ofertas").fetchone()[0] == date.today().isoformat()
-    # Con huecos en la numeración no debe repetir un id existente
-    d, _ = guardar(con, {"empresa": "Hueco", "titulo": "Uno"})
-    e, _ = guardar(con, {"empresa": "Hueco", "titulo": "Dos"})
-    con.execute("DELETE FROM ofertas WHERE id = ?", (d,))
-    g, nueva = guardar(con, {"empresa": "Hueco", "titulo": "Tres"})
-    assert nueva and g > e, (d, e, g)
-    f = {"titulo": "Senior Angular Dev", "eliminatorios": "", "encaje": 90}
-    assert motivo_filtro(f, 55) == "puesto Senior"
-    assert motivo_filtro({**f, "titulo": "JavaScript Developer"}, 55) is None
-    assert motivo_filtro({**f, "titulo": "Full Stack Java & Angular"}, 55) is None
-    assert motivo_filtro({**f, "titulo": ".NET + Angular"}, 55) is None
-    assert motivo_filtro({**f, "titulo": "Frontend", "eliminatorios": "presencial fuera"}, 55).startswith("eliminatorio")
-    assert motivo_filtro({**f, "titulo": "Frontend", "encaje": 50}, 55) == "encaje 50 < 55"
-    assert motivo_filtro({**f, "titulo": "Frontend", "encaje": None}, 55) is None
-    assert "contacto_fecha" in {r[1] for r in con.execute("PRAGMA table_info(ofertas)")}
-    print("db.py OK")

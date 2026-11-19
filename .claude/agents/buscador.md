@@ -45,12 +45,12 @@ Guarda como `descartada` con `notas: "Posible oferta fraudulenta: <motivo>"` si:
 Compara la oferta con el CV real, no con lo que al candidato le gustaría:
 - **Stack (hasta 45)**: Angular, TypeScript, RxJS como núcleo = máximo; React frontend = alto (lo tiene en el CV); Full Stack donde el backend pesa más que el front = medio o bajo.
 - **Nivel (hasta 25)**: compara con `nivel.experiencia_anios` del perfil. Pide hasta esa cifra = máximo; pide `nivel.max_anios_pedidos` = medio; más = bajo en ese factor, pero **nunca eliminatorio** (no lo pongas en `eliminatorios`).
-- **Ubicación y modalidad (hasta 20)**: remoto en España, o híbrido/presencial en una ciudad de `ubicaciones.aceptadas` = máximo. Resto de España presencial = bajo.
+- **Ubicación y modalidad (hasta 20)**: remoto en España, o híbrido/presencial en cualquier ciudad de España = máximo. Fuera de España solo si `ubicaciones.europa_solo_ingles` lo permite.
 - **Contrato e idioma (hasta 10)**: indefinido y español o inglés hasta `candidato.ingles`.
 
-**Filtros eliminatorios** (campo `eliminatorios`, texto corto, vacío si no hay): presencialidad fuera de las ciudades aceptadas, idioma exigido distinto de español o inglés (alemán, francés, italiano), inglés por encima de `candidato.ingles`, nacionalidad o permiso de trabajo no UE, habilitación de seguridad. Si hay alguno, el encaje no pasa de 40.
+**Filtros eliminatorios** (campo `eliminatorios`, texto corto, vacío si no hay): presencialidad fuera de España (dentro de España, remoto, híbrido y presencial NO son eliminatorios), idioma exigido distinto de español o inglés (alemán, francés, italiano), inglés por encima de `candidato.ingles`, nacionalidad o permiso de trabajo no UE, habilitación de seguridad. Si hay alguno, el encaje no pasa de 40.
 
-**Filtro de calidad**: `src.cli guardar` pasa automáticamente a `descartada` (con el motivo en `notas`) las ofertas nuevas con `eliminatorios`, con encaje inferior a `encaje.minimo_postular` o con Senior en el título. Por eso los eliminatorios tienen que ser reales y el encaje honesto: no los infles ni los escondas para que una oferta pase. Además, pon tú `estado: "descartada"` (con el motivo en `notas`) si exige un idioma de `encaje.descartar_idiomas`, o si es presencial o híbrida fuera de `ubicaciones.aceptadas` y `encaje.descartar_presencial_fuera` es true. Todo lo demás queda `nueva`.
+**Filtro de calidad**: `src.cli guardar` pasa automáticamente a `descartada` (con el motivo en `notas`) las ofertas nuevas con `eliminatorios`, con encaje inferior a `encaje.minimo_postular` o con Senior en el título. Por eso los eliminatorios tienen que ser reales y el encaje honesto: no los infles ni los escondas para que una oferta pase. Además, pon tú `estado: "descartada"` (con el motivo en `notas`) si exige un idioma de `encaje.descartar_idiomas`, o si es presencial o híbrida fuera de España (o fuera de `ubicaciones.aceptadas` solo si `encaje.descartar_presencial_fuera` es true, hoy false). Todo lo demás queda `nueva`.
 
 `justificacion`: una frase de 25 palabras como máximo, sin guiones largos ni medios.
 
