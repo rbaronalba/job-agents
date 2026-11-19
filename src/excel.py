@@ -126,25 +126,3 @@ def exportar(con, semana: str | None = None) -> tuple[Path, list[str]]:
     except PermissionError:
         raise SystemExit(f"No puedo guardar {destino.name}: ciérralo en Excel y vuelve a ejecutar.")
     return destino, cambios
-
-
-if __name__ == "__main__":
-    # Autocomprobación: exportar, editar a mano el estado en el Excel, y que vuelva a SQLite
-    import tempfile
-    CARPETA = Path(tempfile.mkdtemp())
-    con = db.conectar(Path(":memory:"))
-    a, _ = db.guardar(con, {"empresa": "A", "titulo": "Front", "encaje": 80, "urls": ["https://x/1"], "portales": ["linkedin"]})
-    b, _ = db.guardar(con, {"empresa": "B", "titulo": "Angular", "encaje": 40, "eliminatorios": "+5 años"})
-    sem = db.semana()
-    p, _ = exportar(con, sem)
-    wb = load_workbook(p); ws = wb[HOJA]
-    assert ws.cell(row=2, column=1).value == a, "orden por encaje"
-    ws.cell(row=2, column=CAB.index("Estado") + 1, value="descartada")
-    ws.cell(row=3, column=CAB.index("Notas") + 1, value="no me interesa")
-    wb.save(p)
-    _, cambios = exportar(con, sem)
-    assert con.execute("SELECT estado FROM ofertas WHERE id = ?", (a,)).fetchone()[0] == "descartada", cambios
-    assert con.execute("SELECT notas FROM ofertas WHERE id = ?", (b,)).fetchone()[0] == "no me interesa"
-    _, cambios = exportar(con, sem)
-    assert cambios == [], cambios   # sin ediciones nuevas no reimporta nada
-    print("excel.py OK")

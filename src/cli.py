@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import date, datetime
@@ -42,7 +43,8 @@ RAIZ = db.RAIZ
 
 
 def perfil() -> dict:
-    ruta = RAIZ / "config" / "profile.yaml"
+    # JOB_AGENTS_PERFIL: otro perfil (los tests usan uno fijo, nunca el real)
+    ruta = Path(os.environ["JOB_AGENTS_PERFIL"]) if os.environ.get("JOB_AGENTS_PERFIL") else RAIZ / "config" / "profile.yaml"
     if not ruta.exists():
         raise SystemExit("Falta config/profile.yaml. Copia config/profile.example.yaml y rellénalo.")
     return yaml.safe_load(ruta.read_text(encoding="utf-8"))
@@ -246,7 +248,7 @@ def cmd_cv(args):
                  ", ".join(adapt["carencias"]) if adapt.get("carencias") else None, args.id))
     db.cambiar_estado(con, args.id, "cv_adaptado")
     con.commit()
-    print(f"{args.id} -> cv_adaptado ({carpeta.relative_to(RAIZ)})")
+    print(f"{args.id} -> cv_adaptado ({db.corta(carpeta)})")
 
 
 def cmd_preparar(args):
@@ -306,9 +308,7 @@ def cmd_enviada(args):
     con.commit()
     print(f"{args.id} -> enviada")
     # LinkedIn manda "se ha enviado tu solicitud" y candidaturas-sync la detecta sola
-    if db.PRUEBA:
-        print("Seguimiento: modo prueba, no se registra en candidaturas-sync")
-    elif args.origen.lower() != "linkedin":
+    if args.origen.lower() != "linkedin":   # en prueba cambiar_estado ya abortó: aquí nunca se llega
         print("Seguimiento:", registrar_en_seguimiento(o, args.origen))
     import shutil
     shutil.rmtree(db.OUTPUT / "SUBIR" / args.id, ignore_errors=True)
@@ -320,7 +320,7 @@ def cmd_excel(args):
     destino, cambios = excel.exportar(con, args.semana)
     for c in cambios:
         print(c)
-    print(f"Excel actualizado: {destino.relative_to(RAIZ)}")
+    print(f"Excel actualizado: {db.corta(destino)}")
 
 
 def cmd_resumen(args):

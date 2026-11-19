@@ -161,18 +161,3 @@ def generar(adapt: dict, carpeta: Path) -> dict:
     cv, contacto = componer(adapt)
     _metadatos(destino, contacto["nombre"], cv["titular"])
     return verificar(destino, adapt.get("palabras_clave", []))
-
-
-if __name__ == "__main__":
-    # Autocomprobación: los dos CV base salen en una página, con metadatos y sin guiones largos
-    import tempfile
-    contacto = yaml.safe_load(BASE.read_text(encoding="utf-8"))["contacto"]
-    for idioma in ("es", "en"):
-        inf = generar({"idioma": idioma, "palabras_clave": ["Angular", "TypeScript", "RxJS", "Jest", "Kubernetes"]},
-                      Path(tempfile.mkdtemp()))
-        assert inf["paginas"] == 1, (idioma, inf["paginas"])
-        assert inf["titulo_pdf"] == titulo_pdf() and inf["autor_pdf"] == contacto["nombre"], inf
-        assert not inf["guiones_prohibidos"]
-        assert inf["coincidencia"] == 80 and inf["faltan"] == ["Kubernetes"], inf["faltan"]
-        assert contacto["linkedin"] in inf["texto"]
-    print("cv.py OK")
